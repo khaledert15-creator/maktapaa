@@ -7,6 +7,13 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET must be set in production");
+}
+
+if (isProduction) app.set("trust proxy", 1);
 
 const PgSession = ConnectPgSimple(session);
 
@@ -46,7 +53,7 @@ app.use(
       ) {
         return callback(null, true);
       }
-      callback(null, true); // permissive for dev
+      callback(new Error("Origin is not allowed by CORS"));
     },
     credentials: true,
   }),
@@ -62,11 +69,11 @@ app.use(
       createTableIfMissing: false,
       tableName: "user_sessions",
     }),
-    secret: process.env.SESSION_SECRET || "maktaba-dev-secret-change-in-prod",
+    secret: process.env.SESSION_SECRET || "maktaba-local-development-only",
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false, // set true when using https
+      secure: isProduction,
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       sameSite: "lax",

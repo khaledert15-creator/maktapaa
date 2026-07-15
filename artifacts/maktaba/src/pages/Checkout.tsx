@@ -36,7 +36,7 @@ const formSchema = z.object({
 
 export default function Checkout() {
   const [, setLocation] = useLocation();
-  const { data: cart, isLoading: isLoadingCart } = useGetCart({ query: { retry: false } });
+  const { data: cart, isLoading: isLoadingCart } = useGetCart({ query: { queryKey: ['/api/cart'], retry: false } });
   const { data: governorates } = useListGovernorates();
   const { toast } = useToast();
   const queryClient = useQueryClient();

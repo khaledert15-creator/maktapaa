@@ -166,12 +166,11 @@ router.post("/products/:id/reviews", async (req, res): Promise<void> => {
   const id = parseInt(raw, 10);
   const { rating, comment } = req.body;
 
-  const session = req.session as Record<string, unknown>;
-  const customerName = (session.customerName as string) || "عميل";
+  const customerName = req.session.customerName || "عميل";
 
   const [review] = await db.insert(reviewsTable).values({
     productId: id, rating: parseInt(rating, 10), comment: comment || null,
-    customerName, customerId: session.customerId ? (session.customerId as number) : null, isApproved: 1,
+    customerName, customerId: req.session.customerId || null, isApproved: 1,
   }).returning();
 
   res.status(201).json({ id: review.id, productId: review.productId, customerName: review.customerName, rating: review.rating, comment: review.comment, createdAt: review.createdAt });

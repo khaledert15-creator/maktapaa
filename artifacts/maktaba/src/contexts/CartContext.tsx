@@ -10,7 +10,7 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const { data: cart, isLoading } = useGetCart({ query: { retry: false } });
+  const { data: cart, isLoading } = useGetCart({ query: { queryKey: ['/api/cart'], retry: false } });
 
   const itemCount = useMemo(() => {
     if (!cart) return 0;

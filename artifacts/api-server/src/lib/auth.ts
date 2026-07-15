@@ -28,9 +28,28 @@ export function requireAdminAuth(req: Request, res: Response, next: NextFunction
   next();
 }
 
+export function requireAdminPermission(permission: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.session?.adminId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    if (
+      req.session.adminRole === "owner" ||
+      req.session.adminRole === "administrator" ||
+      req.session.adminPermissions?.includes(permission)
+    ) {
+      next();
+      return;
+    }
+
+    res.status(403).json({ error: "ليس لديك صلاحية لتنفيذ هذا الإجراء" });
+  };
+}
+
 export async function getCustomerFromSession(req: Request) {
-  
-  if (!session?.customerId) return null;
+  if (!req.session?.customerId) return null;
   const [customer] = await db
     .select()
     .from(customersTable)
@@ -39,8 +58,7 @@ export async function getCustomerFromSession(req: Request) {
 }
 
 export async function getAdminFromSession(req: Request) {
-  
-  if (!session?.adminId) return null;
+  if (!req.session?.adminId) return null;
   const [user] = await db
     .select()
     .from(usersTable)

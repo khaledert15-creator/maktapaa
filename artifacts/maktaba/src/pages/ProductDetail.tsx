@@ -13,7 +13,10 @@ import { getGetCartQueryKey } from "@workspace/api-client-react";
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
   const { data: product, isLoading, isError } = useGetProduct(slug);
-  const { data: relatedProducts } = useGetRelatedProducts(product?.id || 0, { query: { enabled: !!product?.id } });
+  const relatedProductId = product?.id || 0;
+  const { data: relatedProducts } = useGetRelatedProducts(relatedProductId, {
+    query: { queryKey: [`/api/products/${relatedProductId}/related`], enabled: !!product?.id }
+  });
   
   const [quantity, setQuantity] = useState(1);
   const { toast } = useToast();

@@ -25,6 +25,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
   
   req.session.customerId = customer.id;
+  req.session.customerName = customer.name;
 
   res.status(201).json({ customer: { id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt } });
 });
@@ -56,6 +57,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   
   req.session.customerId = customer.id;
+  req.session.customerName = customer.name;
 
   res.json({ customer: { id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt } });
 });
@@ -105,6 +107,7 @@ router.post("/auth/admin/login", async (req, res): Promise<void> => {
   
   req.session.adminId = user.id;
   req.session.adminRole = user.role;
+  req.session.adminPermissions = user.permissions;
 
   res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, permissions: user.permissions } });
 });

@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -17,9 +17,17 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function AdminLayout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
-  const { admin, logoutAdmin } = useAuth();
+  const [location, setLocation] = useLocation();
+  const { admin, isAdminAuthLoaded, logoutAdmin } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (isAdminAuthLoaded && !admin) setLocation('/admin/login');
+  }, [admin, isAdminAuthLoaded, setLocation]);
+
+  if (!isAdminAuthLoaded || !admin) {
+    return <div className="min-h-screen grid place-items-center" dir="rtl">جاري التحقق من صلاحية الدخول...</div>;
+  }
 
   const navigation = [
     { name: "لوحة التحكم", href: "/admin", icon: LayoutDashboard },

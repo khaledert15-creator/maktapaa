@@ -26,13 +26,12 @@ export default function Account() {
 
   const { data: ordersData, isLoading: isLoadingOrders } = useGetMyOrders(
     { page: 1, limit: 10 },
-    { query: { enabled: !!customer } }
+    { query: { queryKey: ['/api/orders/my', { page: 1, limit: 10 }], enabled: !!customer } }
   );
 
-  const { data: favoritesData, isLoading: isLoadingFavs } = useListFavorites(
-    undefined,
-    { query: { enabled: !!customer && defaultTab === 'favorites' } }
-  );
+  const { data: favoritesData, isLoading: isLoadingFavs } = useListFavorites({
+    query: { queryKey: ['/api/customers/me/favorites'], enabled: !!customer && defaultTab === 'favorites' }
+  });
 
   // Auth Guard
   if (isCustomerAuthLoaded && !customer) {

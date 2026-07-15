@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, couponsTable, customersTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, couponsTable, customersTable, stockMovementsTable } from "@workspace/db";
 import { eq, and, desc, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -42,12 +42,17 @@ router.post("/orders", async (req, res): Promise<void> => {
     landmark, deliveryNotes, orderNotes, paymentMethod, couponCode, cartItems,
   } = req.body;
 
+  if (paymentMethod && paymentMethod !== "cash_on_delivery") {
+    res.status(400).json({ error: "الدفع عند الاستلام هو وسيلة الدفع المتاحة حاليًا" });
+    return;
+  }
+
   if (!customerName || !mobile || !governorateId || !city || !detailedAddress) {
     res.status(400).json({ error: "البيانات المطلوبة ناقصة" });
     return;
   }
 
-  if (!cartItems || cartItems.length === 0) {
+  if (!Array.isArray(cartItems) || cartItems.length === 0) {
     res.status(400).json({ error: "السلة فارغة" });
     return;
   }
@@ -59,6 +64,10 @@ router.post("/orders", async (req, res): Promise<void> => {
   let subtotal = 0;
   const resolvedItems: { product: typeof productsTable.$inferSelect; quantity: number }[] = [];
   for (const ci of cartItems) {
+    if (!Number.isInteger(ci.productId) || !Number.isInteger(ci.quantity) || ci.quantity < 1 || ci.quantity > 99) {
+      res.status(400).json({ error: "بيانات كمية المنتج غير صحيحة" });
+      return;
+    }
     const [product] = await db.select().from(productsTable).where(eq(productsTable.id, ci.productId));
     if (!product || product.status !== "active") {
       res.status(400).json({ error: `المنتج غير متاح` });
@@ -97,8 +106,8 @@ router.post("/orders", async (req, res): Promise<void> => {
     governorateId: gov.id, governorateName: gov.nameAr,
     city, detailedAddress, landmark: landmark || null,
     deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
-    paymentMethod: paymentMethod || "cash_on_delivery",
-    paymentStatus: paymentMethod === "cash_on_delivery" ? "cash_on_delivery" : "pending",
+    paymentMethod: "cash_on_delivery",
+    paymentStatus: "cash_on_delivery",
     subtotal: String(subtotal), discount: "0", couponDiscount: String(couponDiscount),
     couponCode: couponCode || null, shippingCost: String(shippingCost),
     total: String(total), status: "new",
@@ -115,6 +124,15 @@ router.post("/orders", async (req, res): Promise<void> => {
       stockQuantity: product.stockQuantity - quantity,
       salesCount: sql`${productsTable.salesCount} + ${quantity}`,
     }).where(eq(productsTable.id, product.id));
+    await db.insert(stockMovementsTable).values({
+      productId: product.id,
+      movementType: "sale",
+      quantityBefore: product.stockQuantity,
+      quantityAfter: product.stockQuantity - quantity,
+      quantityChanged: -quantity,
+      reason: `حجز للطلب ${order.orderNumber}`,
+      orderId: order.id,
+    });
   }
 
   await db.insert(orderStatusHistoryTable).values({ orderId: order.id, status: "new", notes: "تم إنشاء الطلب" });
@@ -216,6 +234,11 @@ router.post("/orders/:id/cancel-request", async (req, res): Promise<void> => {
 
   if (!reason) { res.status(400).json({ error: "سبب الإلغاء مطلوب" }); return; }
 
+  if (typeof reason !== "string" || reason.trim().length < 5 || reason.trim().length > 500) {
+    res.status(400).json({ error: "سبب الإلغاء يجب أن يكون بين 5 و500 حرف" });
+    return;
+  }
+
   const [order] = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, id), eq(ordersTable.customerId, req.session.customerId as number)));
 
@@ -226,8 +249,18 @@ router.post("/orders/:id/cancel-request", async (req, res): Promise<void> => {
     return;
   }
 
+  const [existingRequest] = await db.select().from(cancellationRequestsTable)
+    .where(and(
+      eq(cancellationRequestsTable.orderId, id),
+      eq(cancellationRequestsTable.status, "pending"),
+    ));
+  if (existingRequest) {
+    res.status(409).json({ error: "يوجد طلب إلغاء قيد المراجعة بالفعل" });
+    return;
+  }
+
   const [cr] = await db.insert(cancellationRequestsTable).values({
-    orderId: id, customerId: req.session.customerId as number, reason, status: "pending",
+    orderId: id, customerId: req.session.customerId as number, reason: reason.trim(), status: "pending",
   }).returning();
 
   res.status(201).json({ id: cr.id, orderId: cr.orderId, reason: cr.reason, status: cr.status, createdAt: cr.createdAt });

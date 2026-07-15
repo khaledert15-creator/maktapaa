@@ -1,6 +1,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Customer, AdminUser } from '@workspace/api-client-react';
+import {
+  Customer,
+  AdminUser,
+  getCurrentCustomer,
+  getCurrentAdmin,
+  logoutCustomer,
+  logoutAdmin,
+} from '@workspace/api-client-react';
 
 interface AuthContextType {
   customer: Customer | null;
@@ -24,20 +31,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const loadAuth = async () => {
-      // Typically you'd check localStorage/cookies or prefetch getCurrentCustomer and getCurrentAdmin
-      // Since queries run via hooks later, we'll mark as loaded for now or let components handle it
+      const [customerResult, adminResult] = await Promise.allSettled([
+        getCurrentCustomer(),
+        getCurrentAdmin(),
+      ]);
+      if (customerResult.status === 'fulfilled') setCustomer(customerResult.value);
+      if (adminResult.status === 'fulfilled') setAdmin(adminResult.value);
       setIsCustomerAuthLoaded(true);
       setIsAdminAuthLoaded(true);
     };
     loadAuth();
   }, []);
 
-  const handleLogoutCustomer = () => {
+  const handleLogoutCustomer = async () => {
+    await logoutCustomer().catch(() => undefined);
     setCustomer(null);
     queryClient.clear(); // Clear all queries
   };
 
-  const handleLogoutAdmin = () => {
+  const handleLogoutAdmin = async () => {
+    await logoutAdmin().catch(() => undefined);
     setAdmin(null);
     queryClient.clear();
   };

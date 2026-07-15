@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, stockMovementsTable } from "@workspace/db";
 import { eq, and, ilike, desc, gte, lte, sql } from "drizzle-orm";
-import { requireAdminAuth } from "../../lib/auth";
+import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
+router.use(requireAdminPermission("orders.manage"));
 
 function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof orderItemsTable.$inferSelect[], history: typeof orderStatusHistoryTable.$inferSelect[]) {
   return {
@@ -126,12 +127,27 @@ router.patch("/admin/orders/:id/cancellation", async (req, res): Promise<void> =
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { decision, notes } = req.body;
+
+  if (decision !== "approved" && decision !== "rejected") {
+    res.status(400).json({ error: "القرار يجب أن يكون موافقة أو رفض" });
+    return;
+  }
+
+  const [pendingRequest] = await db.select().from(cancellationRequestsTable)
+    .where(and(
+      eq(cancellationRequestsTable.orderId, id),
+      eq(cancellationRequestsTable.status, "pending"),
+    ));
+  if (!pendingRequest) {
+    res.status(404).json({ error: "لا يوجد طلب إلغاء قيد المراجعة" });
+    return;
+  }
   
 
   await db.update(cancellationRequestsTable).set({
     status: decision, employeeNotes: notes || null,
     employeeId: req.session.adminId as number || null, decidedAt: new Date(),
-  }).where(eq(cancellationRequestsTable.orderId, id));
+  }).where(eq(cancellationRequestsTable.id, pendingRequest.id));
 
   if (decision === "approved") {
     await db.update(ordersTable).set({ status: "cancelled" }).where(eq(ordersTable.id, id));
@@ -143,7 +159,20 @@ router.patch("/admin/orders/:id/cancellation", async (req, res): Promise<void> =
     const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id));
     for (const item of items) {
       if (item.productId) {
+        const [product] = await db.select().from(productsTable).where(eq(productsTable.id, item.productId));
+        if (!product) continue;
+        const quantityAfter = product.stockQuantity + item.quantity;
         await db.update(productsTable).set({ stockQuantity: sql`${productsTable.stockQuantity} + ${item.quantity}` }).where(eq(productsTable.id, item.productId));
+        await db.insert(stockMovementsTable).values({
+          productId: item.productId,
+          movementType: "reservation_release",
+          quantityBefore: product.stockQuantity,
+          quantityAfter,
+          quantityChanged: item.quantity,
+          reason: `استعادة مخزون الطلب الملغي رقم ${id}`,
+          orderId: id,
+          employeeId: req.session.adminId || null,
+        });
       }
     }
   }

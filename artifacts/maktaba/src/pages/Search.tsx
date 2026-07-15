@@ -51,12 +51,12 @@ export default function Search() {
 
   const { data: suggestionsData, isLoading: isLoadingSuggestions } = useGetSearchSuggestions(
     { q: debouncedQuery },
-    { query: { enabled: debouncedQuery.length > 1 && isFocused } }
+    { query: { queryKey: ['/api/search/suggestions', { q: debouncedQuery }], enabled: debouncedQuery.length > 1 && isFocused } }
   );
 
   const { data: resultsData, isLoading: isLoadingResults } = useListProducts(
     { q: initialQuery },
-    { query: { enabled: !!initialQuery && !isFocused } }
+    { query: { queryKey: ['/api/products', { q: initialQuery }], enabled: !!initialQuery && !isFocused } }
   );
 
   return (

@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Cart() {
   const [, setLocation] = useLocation();
-  const { data: cart, isLoading } = useGetCart({ query: { retry: false } });
+  const { data: cart, isLoading } = useGetCart({ query: { queryKey: ['/api/cart'], retry: false } });
   const [couponCode, setCouponCode] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
