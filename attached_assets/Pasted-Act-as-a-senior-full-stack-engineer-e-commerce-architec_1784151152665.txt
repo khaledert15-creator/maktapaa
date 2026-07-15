@@ -1,0 +1,1261 @@
+Act as a senior full-stack engineer, e-commerce architect, UI/UX designer, database architect, security engineer, product manager, and QA specialist.
+
+Build a complete, production-ready Arabic RTL e-commerce platform for an Egyptian online bookstore called:
+
+مكتبة دوت كوم
+Maktaba Dot Com
+
+This must be a real, functional online store with:
+
+- Customer-facing e-commerce website
+- Professional Arabic admin dashboard
+- PostgreSQL database
+- Product and inventory management
+- Order management
+- Customer management
+- Employee permissions
+- Reports
+- Shipping settings
+- Website content management
+- Future integration architecture with the bookstore’s internal system
+- Future readiness for Fawry online payment
+
+Do not create a static landing page.
+Do not create fake buttons.
+Do not leave incomplete placeholder pages.
+Do not stop after planning.
+Create and modify the actual project files.
+Install dependencies.
+Configure the database.
+Run the application.
+Test all important workflows.
+Fix all errors directly.
+
+==================================================
+1. BUSINESS OVERVIEW
+==================================================
+
+Business name:
+
+مكتبة دوت كوم
+Maktaba Dot Com
+
+Business type:
+
+An Egyptian online bookstore specializing in:
+
+- School books
+- External educational books
+- Revision books
+- Arabic curriculum books
+- Language school books
+- Azhar books
+- Educational materials
+- School supplies
+- Book packages and educational bundles
+
+Target customers:
+
+- Students
+- Parents
+- Teachers
+- Arabic secondary school students
+- Language school students
+- Azhar students
+- Schools
+- Educational centers
+
+Main marketing and sales channels:
+
+- Website
+- WhatsApp
+- Facebook
+- Instagram
+- TikTok
+- Telegram
+
+Delivery:
+
+- Delivery across Egypt
+- Cash on delivery
+- Delta delivery target: approximately 48 hours
+- Upper Egypt delivery target: approximately 72 hours
+- Friday and Saturday may be non-working days
+- Customers may receive multiple books in one shipment
+
+Brand messages:
+
+- كل كتبك في كرتونة واحدة
+- كتبك الدراسية لحد باب البيت
+- اطلب كتبك بسهولة والدفع عند الاستلام
+- أقوى الكتب الخارجية والمراجعات النهائية
+- شحن واحد لكل كتبك
+
+==================================================
+2. REQUIRED TECHNOLOGY
+==================================================
+
+Use a modern, maintainable stack suitable for Replit:
+
+- Next.js with App Router
+- TypeScript
+- Tailwind CSS
+- shadcn/ui or another professional accessible component library
+- PostgreSQL
+- Prisma ORM
+- Secure authentication
+- Zod validation
+- React Hook Form where appropriate
+- Server-side validation
+- Environment variables
+- Secure cookies
+- Image optimization
+- Reusable components
+- Clean folder structure
+- API-ready service architecture
+
+Use PostgreSQL, not SQLite.
+
+The application must be easy to deploy later to a real server and custom domain.
+
+==================================================
+3. LANGUAGE AND DESIGN
+==================================================
+
+The customer website and admin dashboard must be:
+
+- Fully Arabic
+- Fully RTL
+- Mobile-first
+- Responsive
+- Modern
+- Fast
+- Easy for non-technical users
+- Suitable for Egyptian customers
+- Visually trustworthy
+- Designed as a premium educational e-commerce brand
+
+Use Arabic-friendly fonts such as:
+
+- Cairo
+- Tajawal
+
+Suggested brand colors:
+
+- White
+- Dark navy
+- Sky blue
+- Limited accent colors for offers and alerts
+
+Do not use Lorem Ipsum.
+
+Use realistic Arabic bookstore content.
+
+Avoid generic template appearance.
+
+==================================================
+4. CUSTOMER WEBSITE
+==================================================
+
+Create the following pages and workflows.
+
+--------------------------------------------------
+A. HOME PAGE
+--------------------------------------------------
+
+Create a professional homepage containing:
+
+- Announcement bar
+- Logo
+- Main navigation
+- Large search field
+- Customer account
+- Favorites
+- Shopping cart
+- WhatsApp button
+- Promotional hero banners
+- Educational stages
+- School grades
+- Education types
+- Subjects
+- Publishers
+- Best-selling products
+- Latest products
+- Special offers
+- Book packages
+- Revision books
+- Recommended books
+- Customer reviews
+- Why choose Maktaba Dot Com
+- Delivery information
+- Cash-on-delivery information
+- Frequently asked questions
+- Contact information
+- Social media links
+- Professional footer
+
+The admin must be able to:
+
+- Show or hide homepage sections
+- Change section order
+- Change titles and descriptions
+- Upload and change banners
+- Select featured products
+- Select featured categories
+- Select featured publishers
+- Control promotional messages
+
+--------------------------------------------------
+B. PRODUCT CATALOG
+--------------------------------------------------
+
+Create a professional product listing page with:
+
+- Product grid
+- Search
+- Filters
+- Sorting
+- Pagination or load more
+- Responsive mobile layout
+- Product availability status
+- Discount display
+- Quick add-to-cart where appropriate
+
+Filters must include:
+
+- Educational stage
+- School grade
+- Education type:
+  - عربي
+  - لغات
+  - أزهر
+- Subject
+- Publisher
+- Author or teacher
+- Book type
+- School year
+- Price range
+- Availability
+- Discount
+- New products
+- Best sellers
+- Revision books
+- Packages
+
+Sorting must include:
+
+- Newest
+- Best selling
+- Lowest price
+- Highest price
+- Highest discount
+- Recommended
+
+--------------------------------------------------
+C. SMART SEARCH
+--------------------------------------------------
+
+Create smart search that can find products using:
+
+- Arabic product name
+- English product name
+- Publisher
+- Teacher
+- Author
+- Subject
+- School grade
+- Educational stage
+- SKU
+- Barcode
+- Keywords
+- Partial words
+
+Search should:
+
+- Support Arabic text
+- Tolerate simple spelling differences
+- Show suggestions
+- Show recent searches
+- Show popular searches
+- Show product count
+- Avoid returning unrelated results
+
+--------------------------------------------------
+D. PRODUCT DETAILS
+--------------------------------------------------
+
+Each product page must include:
+
+- Main image
+- Additional images
+- Image zoom
+- Arabic title
+- English title if available
+- Short description
+- Full description
+- Educational stage
+- School grade
+- Education type
+- Subject
+- Publisher
+- Author or teacher
+- Edition
+- School year
+- SKU
+- Barcode
+- Current price
+- Old price
+- Discount percentage
+- Stock status
+- Quantity selector
+- Add to cart
+- Buy now
+- Add to favorites
+- WhatsApp inquiry
+- Delivery estimate
+- Related products
+- Frequently bought together
+- Product reviews
+
+--------------------------------------------------
+E. SHOPPING CART
+--------------------------------------------------
+
+Create a fully functional cart with:
+
+- Add product
+- Remove product
+- Change quantity
+- Validate stock
+- Calculate subtotal
+- Calculate discounts
+- Apply coupon
+- Calculate shipping
+- Show free shipping conditions
+- Add customer notes
+- Suggested products
+- Continue shopping
+- Proceed to checkout
+
+Cart contents must remain saved after browser refresh.
+
+Do not allow quantities higher than available stock.
+
+--------------------------------------------------
+F. CHECKOUT
+--------------------------------------------------
+
+Create a simple Egyptian checkout flow.
+
+Required customer fields:
+
+- Full name
+- Primary mobile number
+- Alternative mobile number
+- Governorate
+- City or district
+- Detailed address
+- Nearby landmark
+- Delivery notes
+- Order notes
+- Preferred contact method
+
+Payment rules:
+
+- Cash on delivery is the only active payment method in the first release.
+- Do not activate fake online payment.
+- Prepare the architecture for future Fawry integration.
+- Fawry must be easy to add later without rebuilding checkout.
+
+Payment methods and statuses must support:
+
+Payment methods:
+- Cash on delivery
+- Fawry payment, inactive until real credentials are supplied
+
+Payment statuses:
+- Pending
+- Cash on delivery
+- Paid
+- Failed
+- Refunded
+- Partially refunded
+
+Shipping:
+
+- Shipping price based on governorate
+- Free shipping rules
+- Admin-controlled delivery estimates
+- Admin-controlled available areas
+- Admin-controlled unavailable areas
+
+Checkout must:
+
+- Validate stock again before creating the order
+- Calculate totals correctly
+- Generate a unique order number
+- Create the order in PostgreSQL
+- Reserve or reduce stock safely
+- Prevent duplicate submissions
+- Display an order confirmation page
+- Work without requiring customer registration
+- Allow guest checkout
+
+--------------------------------------------------
+G. CUSTOMER ACCOUNT
+--------------------------------------------------
+
+Create:
+
+- Sign up
+- Login
+- Logout
+- Forgot password
+- Profile
+- Saved addresses
+- Previous orders
+- Order details
+- Order tracking
+- Favorites
+- Reorder
+- Cancellation request
+
+Important cancellation rules:
+
+- Customers cannot automatically cancel an order after it has been submitted.
+- Do not display a direct cancellation button.
+- The customer may submit a cancellation request or contact customer service.
+- Only an authorized employee or administrator can approve cancellation.
+- Cancellation may be rejected if the order is already prepared, shipped, or delivered.
+- Stock must only be restored after cancellation approval.
+- Log:
+  - Customer cancellation reason
+  - Employee decision
+  - Decision notes
+  - Date
+  - Time
+
+--------------------------------------------------
+H. ORDER TRACKING
+--------------------------------------------------
+
+Allow customers to track an order using:
+
+- Order number
+- Mobile number
+
+Order statuses:
+
+- New
+- Awaiting confirmation
+- Confirmed
+- Preparing
+- Ready for shipping
+- Shipped
+- Out for delivery
+- Delivered
+- Delivery failed
+- Returned
+- Partially returned
+- Cancelled
+
+Show:
+
+- Visual order timeline
+- Current status
+- Order date
+- Estimated delivery
+- Tracking number if available
+- Shipping company
+- Status notes when appropriate
+
+--------------------------------------------------
+I. OTHER PAGES
+--------------------------------------------------
+
+Create:
+
+- About us
+- Contact us
+- Frequently asked questions
+- Shipping policy
+- Return and exchange policy
+- Privacy policy
+- Terms and conditions
+- Offers page
+- Publishers page
+- Educational stages page
+- School grades page
+- Order tracking page
+
+==================================================
+5. ADMIN DASHBOARD
+==================================================
+
+Create a separate, protected, fully Arabic RTL admin dashboard.
+
+It must be easy for a non-technical business owner and employees.
+
+--------------------------------------------------
+A. DASHBOARD OVERVIEW
+--------------------------------------------------
+
+Show:
+
+- Sales today
+- Sales this week
+- Sales this month
+- Total orders
+- New orders
+- Awaiting confirmation
+- Preparing orders
+- Shipped orders
+- Delivered orders
+- Cancelled orders
+- Returned orders
+- Low-stock products
+- Out-of-stock products
+- Best-selling products
+- Best customers
+- Recent orders
+- Sales chart
+- Order status chart
+- Average order value
+- Sales by governorate
+- Recent employee activity
+
+--------------------------------------------------
+B. PRODUCT MANAGEMENT
+--------------------------------------------------
+
+Admin must be able to:
+
+- Add product
+- Edit product
+- Duplicate product
+- Archive product
+- Delete product where safe
+- Activate product
+- Deactivate product
+- Save product as draft
+- Upload multiple images
+- Select main image
+- Set product order
+- Set featured product
+- Set best seller
+- Set new product
+- Set offer product
+- Create product bundles
+- Manage related products
+- Manage frequently bought together
+- Update stock
+- Update price
+- Set old price
+- Set sale price
+- Set scheduled discount
+- Add SKU
+- Generate SKU automatically if empty
+- Edit SKU manually
+- Add barcode
+- Add internal notes
+- Bulk update prices
+- Bulk update stock
+- Bulk activate
+- Bulk deactivate
+- Import from CSV
+- Import from Excel
+- Export products
+- Download import template
+- Validate imported data before saving
+- Generate import error report
+
+There is currently no Excel product file.
+
+Create a fast manual product-entry workflow.
+
+--------------------------------------------------
+C. CLASSIFICATIONS
+--------------------------------------------------
+
+Admin must manage:
+
+- Categories
+- Subcategories
+- Educational stages
+- School grades
+- Education types
+- Subjects
+- Publishers
+- Authors
+- Teachers
+- Book types
+- School years
+- Tags
+
+--------------------------------------------------
+D. INVENTORY MANAGEMENT
+--------------------------------------------------
+
+Create professional stock management.
+
+Each product must support:
+
+- Current quantity
+- Reserved quantity
+- Available quantity
+- Minimum stock level
+- Low-stock warning
+- Out-of-stock warning
+
+Create stock movement types:
+
+- Purchase entry
+- Sale deduction
+- Return entry
+- Damaged stock deduction
+- Manual increase
+- Manual decrease
+- Inventory adjustment
+- Reservation
+- Reservation release
+
+Every stock movement must record:
+
+- Product
+- Quantity before
+- Quantity after
+- Quantity changed
+- Movement type
+- Reason
+- Related order if applicable
+- Employee
+- Date
+- Time
+
+Never allow silent stock changes.
+
+--------------------------------------------------
+E. ORDER MANAGEMENT
+--------------------------------------------------
+
+Admin must be able to:
+
+- View all orders
+- Search orders
+- Filter by date
+- Filter by status
+- Filter by governorate
+- Filter by employee
+- Filter by payment status
+- Filter by shipping company
+- Open order details
+- Edit customer information
+- Edit delivery information
+- Add products before shipping
+- Remove products before shipping
+- Change product quantities
+- Apply discount
+- Add shipping cost
+- Add internal notes
+- Change order status
+- Assign order to employee
+- Print invoice
+- Download invoice
+- Print order preparation sheet
+- Print shipping label
+- Contact customer through WhatsApp
+- Approve or reject cancellation request
+- Cancel order
+- Create return
+- Create partial return
+- Record delivery failure reason
+- Record returned shipment
+- View complete order history
+
+--------------------------------------------------
+F. CUSTOMERS
+--------------------------------------------------
+
+Admin must be able to:
+
+- View customers
+- Search by name
+- Search by mobile
+- View previous orders
+- View total purchases
+- View average order value
+- View last order
+- Add internal notes
+- Add customer tags
+- Block customer where necessary
+- View failed deliveries
+- View returns
+- Identify best customers
+- Identify repeat customers
+
+--------------------------------------------------
+G. COUPONS AND OFFERS
+--------------------------------------------------
+
+Create:
+
+- Percentage discounts
+- Fixed discounts
+- Free shipping coupons
+- Minimum order amount
+- Usage limits
+- Start dates
+- End dates
+- Product-specific coupons
+- Category-specific coupons
+- Customer-specific coupons
+- First-order coupons
+- Buy X get Y
+- Product bundles
+- Quantity discounts
+
+Support offers such as:
+
+- Free shipping after purchasing a specific number of books
+- Free shipping for selected revision packages
+- School discounts
+- Publisher packages
+- Special customer groups
+
+--------------------------------------------------
+H. SHIPPING MANAGEMENT
+--------------------------------------------------
+
+Admin must manage:
+
+- Egyptian governorates
+- Cities or districts
+- Shipping prices
+- Estimated delivery times
+- Free shipping conditions
+- Available areas
+- Unavailable areas
+- Shipping companies
+- Tracking numbers
+- Shipping notes
+- Shipment statuses
+- Failed delivery reasons
+
+Prepare the architecture for future integration with:
+
+- Egypt Post
+- Private shipping companies
+- Tracking APIs
+
+Do not create a fake shipping integration.
+
+--------------------------------------------------
+I. CONTENT MANAGEMENT
+--------------------------------------------------
+
+Admin must control:
+
+- Homepage banners
+- Announcement bar
+- Homepage sections
+- Promotional texts
+- FAQs
+- Policies
+- About page
+- Contact information
+- WhatsApp number
+- Social media links
+- Footer
+- SEO titles
+- SEO descriptions
+
+--------------------------------------------------
+J. REPORTS
+--------------------------------------------------
+
+Create reports for:
+
+- Daily sales
+- Weekly sales
+- Monthly sales
+- Custom date range
+- Orders by status
+- Sales by product
+- Sales by category
+- Sales by publisher
+- Sales by grade
+- Sales by subject
+- Best-selling products
+- Slow-moving products
+- Low-stock products
+- Out-of-stock products
+- Best customers
+- Failed deliveries
+- Returns
+- Discounts
+- Coupon usage
+- Governorate sales
+- Employee performance
+
+Allow exporting report data to CSV.
+
+--------------------------------------------------
+K. EMPLOYEES AND PERMISSIONS
+--------------------------------------------------
+
+Create role-based access control.
+
+Suggested roles:
+
+- Owner
+- Administrator
+- Sales employee
+- Customer service
+- Warehouse employee
+- Shipping employee
+- Accountant
+- Content manager
+
+Permissions must control access to:
+
+- Dashboard
+- Products
+- Prices
+- Stock
+- Orders
+- Customers
+- Reports
+- Employees
+- Settings
+- Coupons
+- Website content
+
+Log important actions:
+
+- Employee name
+- Action
+- Entity
+- Entity ID
+- Previous value
+- New value
+- Date
+- Time
+- IP address where practical
+
+==================================================
+6. INVOICE REQUIREMENTS
+==================================================
+
+Create a simple professional sales invoice under the name:
+
+مكتبة دوت كوم
+Maktaba Dot Com
+
+The invoice is not a tax invoice in the first release.
+
+Include:
+
+- Store name
+- Store logo
+- Order number
+- Order date
+- Customer name
+- Mobile number
+- Delivery address
+- Product names
+- Quantities
+- Unit prices
+- Discounts
+- Shipping cost
+- Total amount
+- Payment method
+- Order notes
+- Customer service contact details
+
+Admin must be able to:
+
+- Print invoice
+- Download invoice
+- Reprint invoice
+
+Do not display VAT or tax registration fields unless they are enabled later from settings.
+
+==================================================
+7. INTERNAL SYSTEM INTEGRATION
+==================================================
+
+The bookstore already has an internal business management system.
+
+The website must work independently at launch, but it must be prepared for later integration.
+
+Potential synchronization scope:
+
+- Products
+- Prices
+- Inventory
+- Customers
+- Orders
+- Order statuses
+- Returns
+- Shipping statuses
+
+Important rules:
+
+- Do not claim the website is connected to the internal system unless a real API or database connection has been supplied and tested.
+- Do not create a fake integration.
+- Build an integration-ready architecture.
+- Keep the website fully operational if the internal system is unavailable.
+
+Create service modules for:
+
+- Product service
+- Pricing service
+- Inventory service
+- Order service
+- Customer service
+- Shipping service
+
+Each relevant database record should support:
+
+- externalSystemId
+- syncStatus
+- lastSyncedAt
+- syncError
+- syncRetryCount
+- sourceSystem
+
+Suggested source-of-truth logic for the future:
+
+- Products: internal system
+- Prices: internal system
+- Inventory: internal system
+- Website orders: website sends them to the internal system
+- Order statuses: internal system sends updates back to the website
+- Returns: synchronized between systems
+
+Prepare:
+
+- Secure API endpoints
+- Webhook architecture
+- Authentication for integrations
+- Duplicate prevention
+- Idempotency keys
+- Failed synchronization logs
+- Background retries
+- Manual retry button
+- Integration monitoring page in admin
+
+Do not tightly couple pages directly to database queries.
+
+Use service layers so the internal system can be connected later without rebuilding the website.
+
+At the end, document exactly what is required from the internal system developer to complete the real integration.
+
+==================================================
+8. FUTURE FAWRY INTEGRATION
+==================================================
+
+Cash on delivery is the only active payment method initially.
+
+Prepare the system for future integration with Fawry.
+
+Requirements:
+
+- Create a payment provider abstraction
+- Do not hardcode payment logic in checkout
+- Support future Fawry credentials through environment variables
+- Prepare webhook handling
+- Prepare payment callback pages
+- Prepare transaction reference storage
+- Prepare payment status updates
+- Prepare failed payment handling
+- Prepare refund status
+- Prepare payment audit logs
+
+Do not activate Fawry without real credentials and a completed business contract.
+
+==================================================
+9. DATABASE MODELS
+==================================================
+
+Create a proper relational PostgreSQL schema for:
+
+- Users
+- Employees
+- Roles
+- Permissions
+- Customers
+- Addresses
+- Products
+- Product images
+- Categories
+- Subcategories
+- Educational stages
+- Grades
+- Education types
+- Subjects
+- Publishers
+- Authors
+- Teachers
+- Tags
+- Inventory
+- Stock movements
+- Orders
+- Order items
+- Order status history
+- Payments
+- Payment transactions
+- Shipping methods
+- Shipping companies
+- Governorates
+- Cities
+- Coupons
+- Coupon usage
+- Returns
+- Return items
+- Reviews
+- Favorites
+- Homepage banners
+- Homepage sections
+- Website settings
+- Audit logs
+- Notifications
+- Integration logs
+- Sync jobs
+- Cancellation requests
+
+Use:
+
+- Proper relationships
+- Foreign keys
+- Indexes
+- Unique constraints
+- Timestamps
+- Soft deletion where appropriate
+- Transaction-safe stock updates
+
+==================================================
+10. SECURITY
+==================================================
+
+Implement:
+
+- Secure password hashing
+- Protected admin routes
+- Role-based permissions
+- Server-side validation
+- Secure cookies
+- Rate limiting
+- Input sanitization
+- Environment variables
+- Safe error handling
+- No secrets in source code
+- Authorization checks for stock changes
+- Authorization checks for order changes
+- Audit logs
+- Protection against duplicate requests
+- Secure first-admin setup
+
+==================================================
+11. SEO AND PERFORMANCE
+==================================================
+
+Implement:
+
+- Arabic SEO metadata
+- Clean URLs
+- Product slugs
+- Category slugs
+- Sitemap
+- Robots.txt
+- Product structured data
+- Open Graph metadata
+- Image optimization
+- Lazy loading
+- Accessible forms
+- Accessible navigation
+- Correct heading hierarchy
+- Fast page loading
+- Server-side rendering where appropriate
+
+==================================================
+12. DEMO DATA
+==================================================
+
+Create at least 30 realistic editable sample products covering:
+
+- اللغة العربية
+- اللغة الإنجليزية
+- الرياضيات
+- الفيزياء
+- الكيمياء
+- الأحياء
+- اللغة الفرنسية
+- المرحلة الثانوية
+- اللغات
+- الأزهر
+- المراجعات النهائية
+
+Use realistic demo publishers and product names such as:
+
+- كيان
+- الإبداع
+- نيوتن
+- الوافي
+- مندليف
+- التفوق
+- الدليل
+- المرجع
+- برافو
+- Senior
+- My New Friend
+
+All demo data must be editable from the admin dashboard.
+
+==================================================
+13. USER EXPERIENCE
+==================================================
+
+Include:
+
+- Loading states
+- Skeleton loaders
+- Success messages
+- Error messages
+- Confirmation dialogs
+- Empty states
+- Mobile bottom navigation
+- Sticky add-to-cart button on mobile
+- Easy checkout
+- Large clear buttons
+- Clear Arabic labels
+- Consistent RTL layout
+- Responsive admin tables
+- Mobile-friendly admin forms
+
+==================================================
+14. IMPLEMENTATION ORDER
+==================================================
+
+Phase 1:
+
+- Initialize the project
+- Install dependencies
+- Configure PostgreSQL
+- Configure Prisma
+- Create schema
+- Run migrations
+- Create seed data
+- Configure RTL design system
+- Create authentication
+
+Phase 2:
+
+- Build public layout
+- Build homepage
+- Build product catalog
+- Build search
+- Build filters
+- Build product details
+
+Phase 3:
+
+- Build cart
+- Build checkout
+- Build order creation
+- Build invoice
+- Build customer account
+- Build order tracking
+
+Phase 4:
+
+- Build admin dashboard
+- Build product management
+- Build classifications
+- Build inventory
+- Build stock movement logs
+- Build order management
+
+Phase 5:
+
+- Build customer management
+- Build coupons
+- Build shipping management
+- Build content management
+- Build reports
+- Build employee permissions
+- Build audit logs
+
+Phase 6:
+
+- Build internal-system integration architecture
+- Build synchronization fields
+- Build sync logs
+- Build retry tools
+- Build future Fawry payment abstraction
+
+Phase 7:
+
+- Run TypeScript checks
+- Run linting
+- Run production build
+- Test database workflows
+- Test customer journey
+- Test cart calculations
+- Test order creation
+- Test stock deduction
+- Test cancellation request rules
+- Test admin permissions
+- Test Arabic RTL
+- Test desktop and mobile
+- Fix all errors
+
+==================================================
+15. STRICT COMPLETION RULES
+==================================================
+
+Do not finish by only describing the architecture.
+
+Do not only create documentation.
+
+Do not leave fake buttons.
+
+Do not leave empty pages.
+
+Do not claim features are working unless implemented and tested.
+
+Do not claim the internal system is connected unless a real connection is provided.
+
+Do not activate fake Fawry payment.
+
+Continue implementation until a functional first version runs successfully in Replit.
+
+At the end provide:
+
+- Working Replit preview URL
+- Admin login details
+- Customer test login
+- Completed features
+- Pending external integrations
+- Database setup summary
+- Required environment variables
+- Internal-system integration requirements
+- Fawry integration requirements
+- Deployment instructions
+- Backup instructions
+- Custom domain instructions
+
+Before finishing:
+
+- Run the application
+- Run database migrations
+- Seed the database
+- Run the production build
+- Fix all build errors
+- Fix all TypeScript errors
+- Fix all database errors
+- Test the complete customer journey
+- Test the admin dashboard
+- Test stock movements
+- Test order creation
+- Confirm the website works correctly in Arabic RTL on desktop and mobile

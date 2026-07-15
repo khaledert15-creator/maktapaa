@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "مكتبة دوت كوم"
+version = "1.0.0"
+id = "artifacts/maktaba"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25825
+
+[services.development]
+run = "pnpm --filter @workspace/maktaba run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/maktaba", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/maktaba/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25825"
+BASE_PATH = "/"
