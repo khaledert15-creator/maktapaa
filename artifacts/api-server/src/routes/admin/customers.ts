@@ -1,12 +1,14 @@
 import { Router, type IRouter } from "express";
 import { db, customersTable, ordersTable } from "@workspace/db";
 import { eq, ilike, sql } from "drizzle-orm";
-import { requireAdminAuth } from "../../lib/auth";
+import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
+import { parseBody } from "../../lib/validation";
+import { z } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
 
-router.get("/admin/customers", async (req, res): Promise<void> => {
+router.get("/admin/customers", requireAdminPermission("customers.view"), async (req, res): Promise<void> => {
   const { page = "1", limit = "20", q } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
@@ -38,7 +40,7 @@ router.get("/admin/customers", async (req, res): Promise<void> => {
   res.json({ items: enriched, total: count, page: pageNum, limit: limitNum });
 });
 
-router.get("/admin/customers/:id", async (req, res): Promise<void> => {
+router.get("/admin/customers/:id", requireAdminPermission("customers.view"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const [c] = await db.select().from(customersTable).where(eq(customersTable.id, id));
@@ -60,10 +62,11 @@ router.get("/admin/customers/:id", async (req, res): Promise<void> => {
   });
 });
 
-router.patch("/admin/customers/:id", async (req, res): Promise<void> => {
+router.patch("/admin/customers/:id", requireAdminPermission("customers.edit"), async (req, res): Promise<void> => {
+  const input = parseBody(z.object({ isBlocked: z.boolean().optional(), internalNotes: z.string().max(5000).nullable().optional() }), req.body, res); if (!input) return;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { isBlocked, internalNotes } = req.body;
+  const { isBlocked, internalNotes } = input;
 
   const [c] = await db.update(customersTable).set({
     ...(isBlocked !== undefined && { isBlocked }), ...(internalNotes !== undefined && { internalNotes }),

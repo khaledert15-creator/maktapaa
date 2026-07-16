@@ -1,4 +1,5 @@
-import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -108,7 +109,9 @@ export const cancellationRequestsTable = pgTable("cancellation_requests", {
   employeeId: integer("employee_id"),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [
+  uniqueIndex("cancellation_requests_one_pending_per_order").on(table.orderId).where(sql`${table.status} = 'pending'`),
+]);
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;

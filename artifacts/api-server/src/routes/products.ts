@@ -1,12 +1,17 @@
 import { Router, type IRouter } from "express";
 import {
   db, productsTable, stagesTable, gradesTable, subjectsTable, publishersTable,
-  reviewsTable, categoriesTable,
+  reviewsTable, categoriesTable, orderItemsTable, ordersTable,
 } from "@workspace/db";
 import { eq, and, gte, lte, ilike, or, desc, asc, isNull, sql, inArray } from "drizzle-orm";
 import { enrichProductSummaries, getProductGallery } from "../services/catalog";
+import { parseBody } from "../lib/validation";
+import { rateLimit } from "../lib/rate-limit";
+import { z } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const reviewSchema = z.object({ rating: z.coerce.number().int().min(1).max(5), comment: z.string().trim().min(3).max(2000).nullable().optional() });
+const reviewRateLimit = rateLimit({ namespace: "product-review", windowMs: 60 * 60_000, max: 5 });
 
 // List products (public)
 router.get("/products", async (req, res): Promise<void> => {
@@ -116,7 +121,7 @@ router.get("/products/:slug", async (req, res): Promise<void> => {
     product.gradeId ? db.select().from(gradesTable).where(eq(gradesTable.id, product.gradeId)).then(r => r[0]) : null,
     product.subjectId ? db.select().from(subjectsTable).where(eq(subjectsTable.id, product.subjectId)).then(r => r[0]) : null,
     product.publisherId ? db.select().from(publishersTable).where(eq(publishersTable.id, product.publisherId)).then(r => r[0]) : null,
-    db.select().from(reviewsTable).where(and(eq(reviewsTable.productId, product.id), eq(reviewsTable.isApproved, 1))),
+    db.select().from(reviewsTable).where(and(eq(reviewsTable.productId, product.id), eq(reviewsTable.moderationStatus, "approved"))),
     getProductGallery(product),
   ]);
 
@@ -202,26 +207,38 @@ router.get("/products/:id/reviews", async (req, res): Promise<void> => {
   const id = parseInt(raw, 10);
 
   const reviews = await db.select().from(reviewsTable)
-    .where(and(eq(reviewsTable.productId, id), eq(reviewsTable.isApproved, 1)))
+    .where(and(eq(reviewsTable.productId, id), eq(reviewsTable.moderationStatus, "approved")))
     .orderBy(desc(reviewsTable.createdAt));
 
   res.json(reviews.map(r => ({ id: r.id, productId: r.productId, customerName: r.customerName, rating: r.rating, comment: r.comment, createdAt: r.createdAt })));
 });
 
 // Create review
-router.post("/products/:id/reviews", async (req, res): Promise<void> => {
+router.post("/products/:id/reviews", reviewRateLimit, async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { rating, comment } = req.body;
+  const input = parseBody(reviewSchema, req.body, res); if (!input) return;
+  const { rating, comment } = input;
+
+  const [product] = await db.select({ id: productsTable.id }).from(productsTable).where(and(eq(productsTable.id, id), eq(productsTable.status, "active")));
+  if (!product) { res.status(404).json({ error: "المنتج غير موجود" }); return; }
 
   const customerName = req.session.customerName || "عميل";
+  let verifiedPurchase = false;
+  if (req.session.customerId) {
+    const [purchase] = await db.select({ orderId: orderItemsTable.orderId }).from(orderItemsTable)
+      .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+      .where(and(eq(orderItemsTable.productId, id), eq(ordersTable.customerId, req.session.customerId), sql`${ordersTable.status} <> 'cancelled'`)).limit(1);
+    verifiedPurchase = Boolean(purchase);
+  }
 
   const [review] = await db.insert(reviewsTable).values({
-    productId: id, rating: parseInt(rating, 10), comment: comment || null,
-    customerName, customerId: req.session.customerId || null, isApproved: 1,
+    productId: id, rating, comment: comment || null,
+    customerName, customerId: req.session.customerId || null, isApproved: 0,
+    moderationStatus: "pending", verifiedPurchase,
   }).returning();
 
-  res.status(201).json({ id: review.id, productId: review.productId, customerName: review.customerName, rating: review.rating, comment: review.comment, createdAt: review.createdAt });
+  res.status(201).json({ id: review.id, productId: review.productId, customerName: review.customerName, rating: review.rating, comment: review.comment, moderationStatus: review.moderationStatus, verifiedPurchase: review.verifiedPurchase, createdAt: review.createdAt });
 });
 
 // Categories

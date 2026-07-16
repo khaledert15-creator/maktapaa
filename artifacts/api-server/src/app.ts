@@ -9,6 +9,7 @@ import path from "node:path";
 
 const app: Express = express();
 const isProduction = process.env.NODE_ENV === "production";
+app.disable("x-powered-by");
 
 if (isProduction && !process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET must be set in production");
@@ -38,20 +39,33 @@ app.use(
   }),
 );
 
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("X-Frame-Options", "DENY");
+  if (isProduction) {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    res.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  }
+  next();
+});
+
 const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",")
+  ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean)
   : ["http://localhost:5173", "http://localhost:5174"];
 
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      // Allow all replit.dev domains and localhost
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.includes(".replit.dev") ||
-        origin.includes("localhost")
-      ) {
+      const developmentOrigin = !isProduction && (() => {
+        try {
+          const url = new URL(origin);
+          return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname.endsWith(".replit.dev");
+        } catch { return false; }
+      })();
+      if (allowedOrigins.includes(origin) || developmentOrigin) {
         return callback(null, true);
       }
       callback(new Error("Origin is not allowed by CORS"));
@@ -60,7 +74,7 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), { maxAge: "7d", immutable: true }));
 

@@ -19,11 +19,21 @@ export function requireCustomerAuth(req: Request, res: Response, next: NextFunct
   next();
 }
 
-export function requireAdminAuth(req: Request, res: Response, next: NextFunction): void {
+export async function requireAdminAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.session?.adminId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.adminId));
+  if (!user?.isActive) {
+    req.session.adminId = undefined;
+    req.session.adminRole = undefined;
+    req.session.adminPermissions = undefined;
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  req.session.adminRole = user.role;
+  req.session.adminPermissions = user.permissions;
   next();
 }
 
@@ -45,6 +55,10 @@ export function requireAdminPermission(permission: string) {
 
     res.status(403).json({ error: "ليس لديك صلاحية لتنفيذ هذا الإجراء" });
   };
+}
+
+export function hasAdminPermission(req: Request, permission: string): boolean {
+  return req.session.adminRole === "owner" || req.session.adminRole === "administrator" || Boolean(req.session.adminPermissions?.includes(permission));
 }
 
 export async function getCustomerFromSession(req: Request) {

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "coupons_code_case_insensitive_unique" ON "coupons" USING btree (lower("code"));

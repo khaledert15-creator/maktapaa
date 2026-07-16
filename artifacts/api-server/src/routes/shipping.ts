@@ -1,9 +1,13 @@
 import { Router, type IRouter } from "express";
-import { db, governoratesTable, citiesTable, productsTable, couponsTable } from "@workspace/db";
+import { db, governoratesTable, citiesTable, productsTable } from "@workspace/db";
 import { eq, asc, and, inArray } from "drizzle-orm";
 import { calculateShipping } from "../services/shipping";
+import { CouponValidationError, validateCoupon } from "../services/coupons";
+import { parseBody } from "../lib/validation";
+import { z } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const quoteSchema = z.object({ governorateId: z.coerce.number().int().positive(), city: z.string().trim().max(200).optional(), couponCode: z.string().trim().max(50).optional(), items: z.array(z.object({ productId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive().max(99) })).max(100).optional() });
 
 router.get("/governorates", async (_req, res): Promise<void> => {
   const govs = await db.select().from(governoratesTable)
@@ -33,9 +37,10 @@ router.get("/governorates/:id/cities", async (req, res): Promise<void> => {
 });
 
 router.post("/shipping/quote", async (req, res): Promise<void> => {
-  const governorateId = Number(req.body.governorateId);
-  const cityName = typeof req.body.city === "string" ? req.body.city.trim() : "";
-  const requestedItems = Array.isArray(req.body.items) ? req.body.items : req.session.cart?.items;
+  const input = parseBody(quoteSchema, req.body, res); if (!input) return;
+  const governorateId = input.governorateId;
+  const cityName = input.city ?? "";
+  const requestedItems = input.items ?? req.session.cart?.items;
   if (!Number.isInteger(governorateId) || !Array.isArray(requestedItems) || requestedItems.length === 0) {
     res.status(400).json({ error: "المحافظة ومنتجات السلة مطلوبة لحساب الشحن" });
     return;
@@ -60,10 +65,15 @@ router.post("/shipping/quote", async (req, res): Promise<void> => {
   )) : [];
 
   let freeShippingCoupon = false;
-  const couponCode = typeof req.body.couponCode === "string" ? req.body.couponCode.trim() : req.session.cart?.couponCode;
+  const couponCode = input.couponCode ?? req.session.cart?.couponCode;
   if (couponCode) {
-    const [coupon] = await db.select().from(couponsTable).where(eq(couponsTable.code, couponCode));
-    freeShippingCoupon = Boolean(coupon?.isActive && coupon.type === "free_shipping");
+    try {
+      const application = await validateCoupon(couponCode, { subtotal, customerId: req.session.customerId ?? null, items: normalizedItems.map(item => { const product = productMap.get(item.productId)!; return { productId: product.id, categoryId: product.categoryId, quantity: item.quantity, unitPrice: Number(product.price) }; }) });
+      freeShippingCoupon = application.freeShipping;
+    } catch (error) {
+      if (error instanceof CouponValidationError) { res.status(400).json({ error: error.message, code: error.code }); return; }
+      throw error;
+    }
   }
   const calculation = calculateShipping({
     products: normalizedItems.map((item: { productId: number; quantity: number }) => {

@@ -1,11 +1,18 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, stockMovementsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable } from "@workspace/db";
 import { eq, and, or, ilike, desc, gte, lte, sql } from "drizzle-orm";
 import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 import { writeAuditLog } from "../../services/audit";
+import { decideCancellation, OrderStateError, transitionOrderStatus } from "../../services/order-state";
+import { parseBody } from "../../lib/validation";
+import { z } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
+const orderStatuses = z.enum(["new", "awaiting_confirmation", "confirmed", "preparing", "ready_for_shipping", "shipped", "out_for_delivery", "delivered", "delivery_failed", "returned", "partially_returned", "cancelled"]);
+const orderEditSchema = z.object({ customerName: z.string().trim().min(2).max(200).optional(), mobile: z.string().trim().min(8).max(30).optional(), altMobile: z.string().trim().max(30).nullable().optional(), city: z.string().trim().min(2).max(200).optional(), detailedAddress: z.string().trim().min(5).max(2000).optional(), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), internalNotes: z.string().max(5000).nullable().optional(), trackingNumber: z.string().max(200).nullable().optional(), shippingCompany: z.string().max(200).nullable().optional(), estimatedDeliveryDate: z.string().max(100).nullable().optional() });
+const statusSchema = z.object({ status: orderStatuses, notes: z.string().max(2000).nullable().optional(), trackingNumber: z.string().max(200).nullable().optional(), shippingCompany: z.string().max(200).nullable().optional() });
+const cancellationSchema = z.object({ decision: z.enum(["approved", "rejected"]), notes: z.string().max(2000).nullable().optional() });
 
 function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof orderItemsTable.$inferSelect[], history: typeof orderStatusHistoryTable.$inferSelect[]) {
   return {
@@ -32,7 +39,7 @@ function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof ord
   };
 }
 
-router.get("/admin/orders", async (req, res): Promise<void> => {
+router.get("/admin/orders", requireAdminPermission("orders.view"), async (req, res): Promise<void> => {
   const { page = "1", limit = "20", q, status, paymentStatus, paymentMethod, governorate, dateFrom, dateTo } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
@@ -64,7 +71,7 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   });
 });
 
-router.get("/admin/orders/:id", async (req, res): Promise<void> => {
+router.get("/admin/orders/:id", requireAdminPermission("orders.view"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
@@ -79,9 +86,10 @@ router.get("/admin/orders/:id", async (req, res): Promise<void> => {
 });
 
 router.patch("/admin/orders/:id", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
+  const input = parseBody(orderEditSchema, req.body, res); if (!input) return;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { customerName, mobile, altMobile, city, detailedAddress, landmark, deliveryNotes, orderNotes, internalNotes, trackingNumber, shippingCompany, estimatedDeliveryDate } = req.body;
+  const { customerName, mobile, altMobile, city, detailedAddress, landmark, deliveryNotes, orderNotes, internalNotes, trackingNumber, shippingCompany, estimatedDeliveryDate } = input;
   const [before] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
 
   const [order] = await db.update(ordersTable).set({
@@ -104,19 +112,17 @@ router.patch("/admin/orders/:id", requireAdminPermission("orders.edit"), async (
 });
 
 router.patch("/admin/orders/:id/status", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
+  const input = parseBody(statusSchema, req.body, res); if (!input) return;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { status, notes, trackingNumber, shippingCompany } = req.body;
-  
-
-  const order = await db.transaction(async (tx) => {
-    const [updatedOrder] = await tx.update(ordersTable).set({ status, ...(trackingNumber && { trackingNumber }), ...(shippingCompany && { shippingCompany }) }).where(eq(ordersTable.id, id)).returning();
-    if (!updatedOrder) return null;
-    await tx.insert(orderStatusHistoryTable).values({ orderId: id, status, notes: notes || null, employeeId: req.session.adminId as number || null });
-    return updatedOrder;
-  });
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  await writeAuditLog(req, { action: "order.status_update", entityType: "order", entityId: id, description: `تغيير حالة الطلب ${order.orderNumber} إلى ${status}`, afterData: { status, notes, trackingNumber, shippingCompany } });
+  const { status, notes, trackingNumber, shippingCompany } = input;
+  let order: typeof ordersTable.$inferSelect;
+  try {
+    order = await transitionOrderStatus({ orderId: id, targetStatus: status, notes, trackingNumber, shippingCompany, actor: { employeeId: req.session.adminId!, ipAddress: req.ip } });
+  } catch (error) {
+    if (error instanceof OrderStateError) { res.status(error.code === "NOT_FOUND" ? 404 : 409).json({ error: error.message }); return; }
+    throw error;
+  }
 
   const [items, history] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id)),
@@ -127,45 +133,17 @@ router.patch("/admin/orders/:id/status", requireAdminPermission("orders.edit"), 
 });
 
 router.patch("/admin/orders/:id/cancellation", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
+  const input = parseBody(cancellationSchema, req.body, res); if (!input) return;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { decision, notes } = req.body;
-
-  if (decision !== "approved" && decision !== "rejected") {
-    res.status(400).json({ error: "القرار يجب أن يكون موافقة أو رفض" });
-    return;
+  const { decision, notes } = input;
+  let order: typeof ordersTable.$inferSelect;
+  try {
+    order = await decideCancellation({ orderId: id, decision, notes, actor: { employeeId: req.session.adminId!, ipAddress: req.ip } });
+  } catch (error) {
+    if (error instanceof OrderStateError) { res.status(error.code === "NOT_FOUND" || error.code === "NO_PENDING_REQUEST" ? 404 : 409).json({ error: error.message }); return; }
+    throw error;
   }
-
-  const [pendingRequest] = await db.select().from(cancellationRequestsTable)
-    .where(and(
-      eq(cancellationRequestsTable.orderId, id),
-      eq(cancellationRequestsTable.status, "pending"),
-    ));
-  if (!pendingRequest) {
-    res.status(404).json({ error: "لا يوجد طلب إلغاء قيد المراجعة" });
-    return;
-  }
-  
-
-  await db.transaction(async (tx) => {
-    await tx.update(cancellationRequestsTable).set({ status: decision, employeeNotes: notes || null, employeeId: req.session.adminId as number || null, decidedAt: new Date() }).where(eq(cancellationRequestsTable.id, pendingRequest.id));
-    if (decision !== "approved") return;
-    await tx.update(ordersTable).set({ status: "cancelled" }).where(eq(ordersTable.id, id));
-    await tx.insert(orderStatusHistoryTable).values({ orderId: id, status: "cancelled", notes: notes || "تمت الموافقة على طلب الإلغاء", employeeId: req.session.adminId as number || null });
-    const items = await tx.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id));
-    for (const item of items) {
-      if (!item.productId) continue;
-      const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, item.productId)).for("update");
-      if (!product) continue;
-      const quantityAfter = product.stockQuantity + item.quantity;
-      await tx.update(productsTable).set({ stockQuantity: quantityAfter }).where(eq(productsTable.id, item.productId));
-      await tx.insert(stockMovementsTable).values({ productId: item.productId, movementType: "reservation_release", quantityBefore: product.stockQuantity, quantityAfter, quantityChanged: item.quantity, reason: `استعادة مخزون الطلب الملغي رقم ${id}`, orderId: id, employeeId: req.session.adminId || null });
-    }
-  });
-
-  await writeAuditLog(req, { action: `order.cancellation_${decision}`, entityType: "order", entityId: id, description: decision === "approved" ? "الموافقة على طلب إلغاء" : "رفض طلب إلغاء", afterData: { decision, notes } });
-
-  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   const [items2, history] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id)),
     db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, id)).orderBy(desc(orderStatusHistoryTable.createdAt)),

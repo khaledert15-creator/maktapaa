@@ -3,16 +3,23 @@ import { db, customersTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword } from "../lib/auth";
 import type { IRouter } from "express";
+import { z } from "@workspace/api-zod";
+import { parseBody } from "../lib/validation";
+import { rateLimit } from "../lib/rate-limit";
 
 const router: IRouter = Router();
+const customerRegisterSchema = z.object({ name: z.string().trim().min(2).max(200), mobile: z.string().trim().min(8).max(30), email: z.string().email().max(200).nullable().optional(), password: z.string().min(8).max(200) });
+const loginSchema = z.object({ email: z.string().email().max(200).transform(value => value.toLowerCase()), password: z.string().min(1).max(200) });
+const loginRateLimit = rateLimit({ namespace: "login", windowMs: 15 * 60_000, max: 10 });
+
+function regenerateSession(req: Parameters<typeof router.post>[1] extends (...args: infer A) => unknown ? A[0] : never): Promise<void> {
+  return new Promise((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve()));
+}
 
 // Customer register
 router.post("/auth/register", async (req, res): Promise<void> => {
-  const { name, mobile, email, password } = req.body;
-  if (!name || !mobile || !password) {
-    res.status(400).json({ error: "الاسم والهاتف وكلمة المرور مطلوبة" });
-    return;
-  }
+  const input = parseBody(customerRegisterSchema, req.body, res); if (!input) return;
+  const { name, mobile, email, password } = input;
 
   const existing = await db.select().from(customersTable).where(eq(customersTable.mobile, mobile));
   if (existing.length > 0) {
@@ -24,6 +31,9 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const [customer] = await db.insert(customersTable).values({ name, mobile, email: email || null, passwordHash }).returning();
 
   
+  const existingCart = req.session.cart;
+  await regenerateSession(req);
+  if (existingCart) req.session.cart = existingCart;
   req.session.customerId = customer.id;
   req.session.customerName = customer.name;
 
@@ -31,12 +41,9 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 });
 
 // Customer login
-router.post("/auth/login", async (req, res): Promise<void> => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
-    return;
-  }
+router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
+  const input = parseBody(loginSchema, req.body, res); if (!input) return;
+  const { email, password } = input;
 
   const [customer] = await db.select().from(customersTable).where(eq(customersTable.email, email));
   if (!customer || !customer.passwordHash) {
@@ -56,6 +63,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
 
   
+  const existingCart = req.session.cart;
+  await regenerateSession(req);
+  if (existingCart) req.session.cart = existingCart;
   req.session.customerId = customer.id;
   req.session.customerName = customer.name;
 
@@ -77,7 +87,7 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
   const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, req.session.customerId as number));
-  if (!customer) {
+  if (!customer || customer.isBlocked) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -85,12 +95,9 @@ router.get("/auth/me", async (req, res): Promise<void> => {
 });
 
 // Admin login
-router.post("/auth/admin/login", async (req, res): Promise<void> => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
-    return;
-  }
+router.post("/auth/admin/login", loginRateLimit, async (req, res): Promise<void> => {
+  const input = parseBody(loginSchema, req.body, res); if (!input) return;
+  const { email, password } = input;
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email));
   if (!user || !user.isActive) {
@@ -105,6 +112,7 @@ router.post("/auth/admin/login", async (req, res): Promise<void> => {
   }
 
   
+  await regenerateSession(req);
   req.session.adminId = user.id;
   req.session.adminRole = user.role;
   req.session.adminPermissions = user.permissions;
@@ -127,7 +135,7 @@ router.get("/auth/admin/me", async (req, res): Promise<void> => {
     return;
   }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.adminId as number));
-  if (!user) {
+  if (!user || !user.isActive) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

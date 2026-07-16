@@ -1,9 +1,15 @@
 import { Router, type IRouter } from "express";
-import { db, productsTable, governoratesTable, couponsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, productsTable, governoratesTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import { calculateShipping } from "../services/shipping";
+import { CouponValidationError, validateCoupon } from "../services/coupons";
+import { parseBody } from "../lib/validation";
+import { z } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+const cartItemSchema = z.object({ productId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive().max(99) });
+const cartQuantitySchema = z.object({ quantity: z.coerce.number().int().min(0).max(99) });
+const couponCodeSchema = z.object({ code: z.string().trim().min(2).max(50).transform(value => value.toUpperCase()) });
 
 interface CartItemSession {
   productId: number;
@@ -64,12 +70,11 @@ async function buildCartResponse(cart: CartSession) {
   let couponDiscount = 0;
   let freeShippingCoupon = false;
   if (cart.couponCode) {
-    const [coupon] = await db.select().from(couponsTable).where(eq(couponsTable.code, cart.couponCode));
-    if (coupon && coupon.isActive) {
-      if (coupon.type === "percentage") couponDiscount = subtotal * (Number(coupon.value) / 100);
-      else if (coupon.type === "fixed") couponDiscount = Math.min(Number(coupon.value), subtotal);
-      else if (coupon.type === "free_shipping") freeShippingCoupon = true;
-    }
+    try {
+      const application = await validateCoupon(cart.couponCode, { subtotal, items: cart.items.flatMap(item => { const product = productMap[item.productId]; return product ? [{ productId: product.id, categoryId: product.categoryId, quantity: item.quantity, unitPrice: Number(product.price) }] : []; }) });
+      couponDiscount = application.discount;
+      freeShippingCoupon = application.freeShipping;
+    } catch (error) { if (!(error instanceof CouponValidationError)) throw error; }
   }
 
   const shipping = governorate ? calculateShipping({
@@ -100,11 +105,8 @@ router.get("/cart", async (req, res): Promise<void> => {
 });
 
 router.post("/cart/items", async (req, res): Promise<void> => {
-  const { productId, quantity } = req.body;
-  if (!productId || !quantity || quantity < 1) {
-    res.status(400).json({ error: "productId and quantity required" });
-    return;
-  }
+  const input = parseBody(cartItemSchema, req.body, res); if (!input) return;
+  const { productId, quantity } = input;
   const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
@@ -121,9 +123,10 @@ router.post("/cart/items", async (req, res): Promise<void> => {
 });
 
 router.patch("/cart/items/:productId", async (req, res): Promise<void> => {
+  const input = parseBody(cartQuantitySchema, req.body, res); if (!input) return;
   const raw = Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId;
   const productId = parseInt(raw, 10);
-  const { quantity } = req.body;
+  const { quantity } = input;
 
   const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
@@ -149,13 +152,18 @@ router.delete("/cart/items/:productId", async (req, res): Promise<void> => {
 });
 
 router.post("/cart/coupon", async (req, res): Promise<void> => {
-  const { code } = req.body;
-  const [coupon] = await db.select().from(couponsTable).where(eq(couponsTable.code, code));
-  if (!coupon || !coupon.isActive) {
-    res.status(400).json({ error: "كود الخصم غير صالح" });
-    return;
-  }
+  const input = parseBody(couponCodeSchema, req.body, res); if (!input) return;
+  const { code } = input;
   const cart = getCartFromSession(req);
+  const preview = await buildCartResponse({ ...cart, couponCode: undefined });
+  try {
+    const productRows = cart.items.length ? await db.select().from(productsTable).where(inArray(productsTable.id, cart.items.map(item => item.productId))) : [];
+    const productMap = new Map(productRows.map(product => [product.id, product]));
+    await validateCoupon(code, { subtotal: preview.subtotal, customerId: req.session.customerId ?? null, items: cart.items.flatMap(item => { const product = productMap.get(item.productId); return product ? [{ productId: product.id, categoryId: product.categoryId, quantity: item.quantity, unitPrice: Number(product.price) }] : []; }) });
+  } catch (error) {
+    if (error instanceof CouponValidationError) { res.status(400).json({ error: error.message, code: error.code }); return; }
+    throw error;
+  }
   cart.couponCode = code;
   (req.session).cart = cart;
   res.json(await buildCartResponse(cart));

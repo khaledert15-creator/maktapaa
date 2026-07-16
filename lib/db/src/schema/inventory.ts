@@ -26,6 +26,7 @@ export const stockMovementsTable = pgTable("stock_movements", {
   orderId: integer("order_id"),
   employeeId: integer("employee_id"),
   employeeName: text("employee_name"),
+  referenceKey: text("reference_key").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

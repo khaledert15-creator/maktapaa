@@ -1,4 +1,5 @@
-import { pgTable, text, serial, timestamp, boolean, integer, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, numeric, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,7 +18,12 @@ export const governoratesTable = pgTable("governorates", {
   updatedBy: integer("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [
+  check("governorates_shipping_non_negative", sql`${table.shippingCost} >= 0`),
+  check("governorates_surcharge_non_negative", sql`${table.remoteAreaSurcharge} >= 0`),
+  check("governorates_threshold_non_negative", sql`${table.freeShippingThreshold} IS NULL OR ${table.freeShippingThreshold} >= 0`),
+  check("governorates_estimated_days_positive", sql`${table.estimatedDays} > 0`),
+]);
 
 export const citiesTable = pgTable("cities", {
   id: serial("id").primaryKey(),
@@ -29,7 +35,10 @@ export const citiesTable = pgTable("cities", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, table => [
+  check("cities_shipping_override_non_negative", sql`${table.shippingPriceOverride} IS NULL OR ${table.shippingPriceOverride} >= 0`),
+  check("cities_surcharge_non_negative", sql`${table.surcharge} >= 0`),
+]);
 
 export const insertGovernorateSchema = createInsertSchema(governoratesTable).omit({ id: true, createdAt: true });
 export type InsertGovernorate = z.infer<typeof insertGovernorateSchema>;

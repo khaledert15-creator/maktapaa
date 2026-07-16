@@ -1,4 +1,5 @@
-import { pgTable, text, serial, timestamp, boolean, integer, numeric, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, numeric, pgEnum, check, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { stagesTable } from "./classifications";
@@ -63,7 +64,14 @@ export const productsTable = pgTable("products", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+}, table => [
+  check("products_price_non_negative", sql`${table.price} >= 0`),
+  check("products_old_price_non_negative", sql`${table.oldPrice} IS NULL OR ${table.oldPrice} >= 0`),
+  check("products_purchase_price_non_negative", sql`${table.purchasePrice} IS NULL OR ${table.purchasePrice} >= 0`),
+  check("products_stock_non_negative", sql`${table.stockQuantity} >= 0`),
+  check("products_reserved_stock_non_negative", sql`${table.reservedQuantity} >= 0`),
+  check("products_min_stock_non_negative", sql`${table.minStockLevel} >= 0`),
+]);
 
 export const productImagesTable = pgTable("product_images", {
   id: serial("id").primaryKey(),
@@ -74,7 +82,9 @@ export const productImagesTable = pgTable("product_images", {
   sortOrder: integer("sort_order").notNull().default(0),
   isPrimary: boolean("is_primary").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [
+  uniqueIndex("product_images_one_primary_per_product").on(table.productId).where(sql`${table.isPrimary} = true`),
+]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProduct = z.infer<typeof insertProductSchema>;

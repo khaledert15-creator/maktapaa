@@ -22,6 +22,41 @@
       "when": 1784220085563,
       "tag": "0002_clever_matthew_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784228504259,
+      "tag": "0003_majestic_nebula",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784228549571,
+      "tag": "0004_military_orphan",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784229096351,
+      "tag": "0005_useful_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784229319301,
+      "tag": "0006_nifty_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784229487081,
+      "tag": "0007_spooky_tomorrow_man",
+      "breakpoints": true
     }
   ]
 }

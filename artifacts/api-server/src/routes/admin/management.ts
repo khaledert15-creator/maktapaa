@@ -3,11 +3,20 @@ import { auditLogsTable, bannersTable, db, faqsTable, siteSettingsTable, usersTa
 import { asc, desc, eq } from "drizzle-orm";
 import { requireAdminAuth, requireAdminPermission, hashPassword } from "../../lib/auth";
 import { writeAuditLog } from "../../services/audit";
+import { parseBody } from "../../lib/validation";
+import { z } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
 
-router.get("/admin/audit-logs", requireAdminPermission("reports.view"), async (_req, res) => {
+const roles = z.enum(["owner", "administrator", "sales", "customer_service", "warehouse", "shipping", "accountant", "content_manager"]);
+const employeeCreateSchema = z.object({ name: z.string().trim().min(2).max(120), email: z.string().email().max(200), password: z.string().min(8).max(200), role: roles.default("sales"), permissions: z.array(z.string().trim().min(1).max(100)).max(100).default([]) });
+const employeeUpdateSchema = z.object({ name: z.string().trim().min(2).max(120).optional(), email: z.string().email().max(200).optional(), password: z.string().min(8).max(200).optional(), role: roles.optional(), permissions: z.array(z.string().trim().min(1).max(100)).max(100).optional(), isActive: z.boolean().optional() });
+const settingSchema = z.object({ value: z.union([z.string().max(20_000), z.number(), z.boolean(), z.null()]) });
+const bannerSchema = z.object({ imageUrl: z.string().trim().min(1).max(2000), titleAr: z.string().max(300).nullable().optional(), subtitleAr: z.string().max(600).nullable().optional(), linkUrl: z.string().max(2000).nullable().optional(), sortOrder: z.coerce.number().int().min(0).max(10_000).optional(), isActive: z.boolean().optional() });
+const faqSchema = z.object({ questionAr: z.string().trim().min(3).max(500), answerAr: z.string().trim().min(3).max(10_000), sortOrder: z.coerce.number().int().min(0).max(10_000).optional(), isActive: z.boolean().optional() });
+
+router.get("/admin/audit-logs", requireAdminPermission("audit.view"), async (_req, res) => {
   res.json(await db.select().from(auditLogsTable).orderBy(desc(auditLogsTable.createdAt)).limit(100));
 });
 
@@ -17,8 +26,8 @@ router.get("/admin/employees", requireAdminPermission("employees.manage"), async
 });
 
 router.post("/admin/employees", requireAdminPermission("employees.manage"), async (req, res): Promise<void> => {
-  const { name, email, password, role, permissions } = req.body;
-  if (!name || !email || typeof password !== "string" || password.length < 8) { res.status(400).json({ error: "الاسم والبريد وكلمة مرور من 8 أحرف مطلوبة" }); return; }
+  const input = parseBody(employeeCreateSchema, req.body, res); if (!input) return;
+  const { name, email, password, role, permissions } = input;
   const [user] = await db.insert(usersTable).values({ name, email: email.toLowerCase(), passwordHash: await hashPassword(password), role: role || "sales", permissions: Array.isArray(permissions) ? permissions : [] }).returning();
   await writeAuditLog(req, { action: "employee.create", entityType: "employee", entityId: user.id, description: `إضافة الموظف ${user.name}` });
   const { passwordHash: _passwordHash, ...safeUser } = user;
@@ -26,9 +35,10 @@ router.post("/admin/employees", requireAdminPermission("employees.manage"), asyn
 });
 
 router.patch("/admin/employees/:id", requireAdminPermission("employees.manage"), async (req, res): Promise<void> => {
+  const input = parseBody(employeeUpdateSchema, req.body, res); if (!input) return;
   const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
-  if (id === req.session.adminId && req.body.isActive === false) { res.status(400).json({ error: "لا يمكنك تعطيل حسابك الحالي" }); return; }
-  const { password, ...updates } = req.body;
+  if (id === req.session.adminId && input.isActive === false) { res.status(400).json({ error: "لا يمكنك تعطيل حسابك الحالي" }); return; }
+  const { password, ...updates } = input;
   const [user] = await db.update(usersTable).set({ ...updates, ...(password ? { passwordHash: await hashPassword(password) } : {}) }).where(eq(usersTable.id, id)).returning();
   if (!user) { res.status(404).json({ error: "الموظف غير موجود" }); return; }
   await writeAuditLog(req, { action: "employee.update", entityType: "employee", entityId: id, description: `تعديل الموظف ${user.name}` });
@@ -39,15 +49,19 @@ router.patch("/admin/employees/:id", requireAdminPermission("employees.manage"),
 router.get("/admin/content/settings", requireAdminPermission("content.manage"), async (_req, res) => res.json(await db.select().from(siteSettingsTable).orderBy(asc(siteSettingsTable.key))));
 router.put("/admin/content/settings/:key", requireAdminPermission("content.manage"), async (req, res) => {
   const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
-  const [row] = await db.insert(siteSettingsTable).values({ key, value: String(req.body.value ?? "") }).onConflictDoUpdate({ target: siteSettingsTable.key, set: { value: String(req.body.value ?? ""), updatedAt: new Date() } }).returning();
+  if (!/^[a-zA-Z0-9_.-]{1,100}$/.test(key)) { res.status(400).json({ error: "مفتاح الإعداد غير صحيح" }); return; }
+  const input = parseBody(settingSchema, req.body, res); if (!input) return;
+  const [row] = await db.insert(siteSettingsTable).values({ key, value: String(input.value ?? "") }).onConflictDoUpdate({ target: siteSettingsTable.key, set: { value: String(input.value ?? ""), updatedAt: new Date() } }).returning();
   await writeAuditLog(req, { action: "content.setting_update", entityType: "setting", entityId: key, description: `تعديل إعداد ${key}` });
   res.json(row);
 });
 router.get("/admin/content/banners", requireAdminPermission("content.manage"), async (_req, res) => res.json(await db.select().from(bannersTable).orderBy(asc(bannersTable.sortOrder))));
-router.post("/admin/content/banners", requireAdminPermission("content.manage"), async (req, res) => { const [row] = await db.insert(bannersTable).values(req.body).returning(); res.status(201).json(row); });
-router.patch("/admin/content/banners/:id", requireAdminPermission("content.manage"), async (req, res) => { const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id); const [row] = await db.update(bannersTable).set(req.body).where(eq(bannersTable.id, id)).returning(); res.json(row); });
+router.post("/admin/content/banners", requireAdminPermission("content.manage"), async (req, res) => { const input = parseBody(bannerSchema, req.body, res); if (!input) return; const [row] = await db.insert(bannersTable).values(input).returning(); res.status(201).json(row); });
+router.patch("/admin/content/banners/:id", requireAdminPermission("content.manage"), async (req, res) => { const input = parseBody(bannerSchema.partial(), req.body, res); if (!input) return; const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id); const [row] = await db.update(bannersTable).set(input).where(eq(bannersTable.id, id)).returning(); res.json(row); });
+router.delete("/admin/content/banners/:id", requireAdminPermission("content.manage"), async (req, res) => { const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id); await db.delete(bannersTable).where(eq(bannersTable.id, id)); res.sendStatus(204); });
 router.get("/admin/content/faqs", requireAdminPermission("content.manage"), async (_req, res) => res.json(await db.select().from(faqsTable).orderBy(asc(faqsTable.sortOrder))));
-router.post("/admin/content/faqs", requireAdminPermission("content.manage"), async (req, res) => { const [row] = await db.insert(faqsTable).values(req.body).returning(); res.status(201).json(row); });
-router.patch("/admin/content/faqs/:id", requireAdminPermission("content.manage"), async (req, res) => { const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id); const [row] = await db.update(faqsTable).set(req.body).where(eq(faqsTable.id, id)).returning(); res.json(row); });
+router.post("/admin/content/faqs", requireAdminPermission("content.manage"), async (req, res) => { const input = parseBody(faqSchema, req.body, res); if (!input) return; const [row] = await db.insert(faqsTable).values(input).returning(); res.status(201).json(row); });
+router.patch("/admin/content/faqs/:id", requireAdminPermission("content.manage"), async (req, res) => { const input = parseBody(faqSchema.partial(), req.body, res); if (!input) return; const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id); const [row] = await db.update(faqsTable).set(input).where(eq(faqsTable.id, id)).returning(); res.json(row); });
+router.delete("/admin/content/faqs/:id", requireAdminPermission("content.manage"), async (req, res) => { const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id); await db.delete(faqsTable).where(eq(faqsTable.id, id)); res.sendStatus(204); });
 
 export default router;

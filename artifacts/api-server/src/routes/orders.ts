@@ -1,10 +1,19 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, couponsTable, customersTable, stockMovementsTable, favoritesTable, addressesTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, customersTable, stockMovementsTable, favoritesTable, addressesTable } from "@workspace/db";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { calculateShipping } from "../services/shipping";
 import { enrichProductSummaries } from "../services/catalog";
+import { CouponValidationError, recordCouponUsage, validateCoupon } from "../services/coupons";
+import { parseBody } from "../lib/validation";
+import { z } from "@workspace/api-zod";
+import { rateLimit } from "../lib/rate-limit";
 
 const router: IRouter = Router();
+const orderRateLimit = rateLimit({ namespace: "order-create", windowMs: 15 * 60_000, max: 20 });
+const orderCreateSchema = z.object({ customerName: z.string().trim().min(2).max(200), mobile: z.string().trim().min(8).max(30), altMobile: z.string().trim().max(30).nullable().optional(), governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), paymentMethod: z.literal("cash_on_delivery").optional(), couponCode: z.string().trim().max(50).transform(value => value.toUpperCase()).nullable().optional(), checkoutToken: z.string().min(12).max(100).nullable().optional(), cartItems: z.array(z.object({ productId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive().max(99) })).max(100).optional() });
+const cancellationRequestSchema = z.object({ reason: z.string().trim().min(5).max(500) });
+const profileSchema = z.object({ name: z.string().trim().min(2).max(200).optional(), email: z.string().email().max(200).nullable().optional(), mobile: z.string().trim().min(8).max(30).optional() });
+const addressSchema = z.object({ governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().trim().max(500).nullable().optional(), isDefault: z.boolean().optional() });
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -44,27 +53,13 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
 }
 
 // Create order
-router.post("/orders", async (req, res): Promise<void> => {
+router.post("/orders", orderRateLimit, async (req, res): Promise<void> => {
+  const input = parseBody(orderCreateSchema, req.body, res); if (!input) return;
   const {
     customerName, mobile, altMobile, governorateId, city, detailedAddress,
-    landmark, deliveryNotes, orderNotes, paymentMethod, couponCode, checkoutToken,
-  } = req.body;
-  const cartItems = Array.isArray(req.body.cartItems) ? req.body.cartItems : req.session.cart?.items;
-
-  if (paymentMethod && paymentMethod !== "cash_on_delivery") {
-    res.status(400).json({ error: "الدفع عند الاستلام هو وسيلة الدفع المتاحة حاليًا" });
-    return;
-  }
-
-  if (!customerName || !mobile || !governorateId || !city || !detailedAddress) {
-    res.status(400).json({ error: "البيانات المطلوبة ناقصة" });
-    return;
-  }
-
-  if (checkoutToken && (typeof checkoutToken !== "string" || checkoutToken.length < 12 || checkoutToken.length > 100)) {
-    res.status(400).json({ error: "رمز تأكيد الطلب غير صحيح" });
-    return;
-  }
+    landmark, deliveryNotes, orderNotes, couponCode, checkoutToken,
+  } = input;
+  const cartItems = input.cartItems ?? req.session.cart?.items;
 
   if (checkoutToken) {
     const [existingOrder] = await db.select().from(ordersTable).where(eq(ordersTable.checkoutToken, checkoutToken));
@@ -83,7 +78,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     return;
   }
 
-  const [gov] = await db.select().from(governoratesTable).where(eq(governoratesTable.id, parseInt(governorateId, 10)));
+  const [gov] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!gov) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
 
   // Validate stock and compute totals
@@ -107,33 +102,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     resolvedItems.push({ product, quantity: ci.quantity });
   }
 
-  let freeShippingCoupon = false;
-  let appliedCouponId: number | null = null;
-
-  let couponDiscount = 0;
-  if (couponCode) {
-    const [coupon] = await db.select().from(couponsTable).where(eq(couponsTable.code, couponCode));
-    if (coupon && coupon.isActive) {
-      if (coupon.type === "percentage") couponDiscount = subtotal * (Number(coupon.value) / 100);
-      else if (coupon.type === "fixed") couponDiscount = Math.min(Number(coupon.value), subtotal);
-      else if (coupon.type === "free_shipping") freeShippingCoupon = true;
-      appliedCouponId = coupon.id;
-    }
-  }
-
   const [matchedCity] = await db.select().from(citiesTable).where(and(eq(citiesTable.governorateId, gov.id), eq(citiesTable.nameAr, city), eq(citiesTable.isActive, true)));
-  const shipping = calculateShipping({
-    products: resolvedItems.map(({ product, quantity }) => ({ price: Number(product.price), quantity, freeShipping: product.freeShipping, freeShippingStartAt: product.freeShippingStartAt, freeShippingEndAt: product.freeShippingEndAt })),
-    subtotal,
-    baseShippingCost: Number(gov.shippingCost),
-    governorateThreshold: gov.freeShippingThreshold ? Number(gov.freeShippingThreshold) : null,
-    cityPriceOverride: matchedCity?.shippingPriceOverride ? Number(matchedCity.shippingPriceOverride) : null,
-    surcharge: matchedCity ? Number(matchedCity.surcharge) : Number(gov.remoteAreaSurcharge),
-    freeShippingCoupon,
-  });
-  const shippingCost = shipping.finalCost;
-
-  const total = Math.max(0, subtotal - couponDiscount + shippingCost);
   const orderNumber = generateOrderNumber();
 
   
@@ -142,9 +111,16 @@ router.post("/orders", async (req, res): Promise<void> => {
   let order: typeof ordersTable.$inferSelect;
   try {
     order = await db.transaction(async (tx) => {
-      if (appliedCouponId) {
-        await tx.update(couponsTable).set({ usedCount: sql`${couponsTable.usedCount} + 1` }).where(eq(couponsTable.id, appliedCouponId));
-      }
+      const coupon = couponCode ? await validateCoupon(couponCode, { subtotal, customerId, items: resolvedItems.map(({ product, quantity }) => ({ productId: product.id, categoryId: product.categoryId, quantity, unitPrice: Number(product.price) })) }, { executor: tx, lock: true }) : null;
+      const couponDiscount = coupon?.discount ?? 0;
+      const shipping = calculateShipping({
+        products: resolvedItems.map(({ product, quantity }) => ({ price: Number(product.price), quantity, freeShipping: product.freeShipping, freeShippingStartAt: product.freeShippingStartAt, freeShippingEndAt: product.freeShippingEndAt })),
+        subtotal, baseShippingCost: Number(gov.shippingCost), governorateThreshold: gov.freeShippingThreshold ? Number(gov.freeShippingThreshold) : null,
+        cityPriceOverride: matchedCity?.shippingPriceOverride ? Number(matchedCity.shippingPriceOverride) : null,
+        surcharge: matchedCity ? Number(matchedCity.surcharge) : Number(gov.remoteAreaSurcharge), freeShippingCoupon: coupon?.freeShipping ?? false,
+      });
+      const shippingCost = shipping.finalCost;
+      const total = Math.max(0, subtotal - couponDiscount + shippingCost);
       const [createdOrder] = await tx.insert(ordersTable).values({
         orderNumber, checkoutToken: checkoutToken || null, customerId, customerName, mobile, altMobile: altMobile || null,
         governorateId: gov.id, governorateName: gov.nameAr,
@@ -178,6 +154,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         });
       }
       await tx.insert(orderStatusHistoryTable).values({ orderId: createdOrder.id, status: "new", notes: "تم إنشاء الطلب" });
+      if (coupon) await recordCouponUsage(tx, coupon, createdOrder.id, customerId);
       return createdOrder;
     });
   } catch (error) {
@@ -185,6 +162,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       res.status(409).json({ error: `الكمية المطلوبة لم تعد متاحة للمنتج: ${error.message.slice(13)}` });
       return;
     }
+    if (error instanceof CouponValidationError) { res.status(400).json({ error: error.message, code: error.code }); return; }
     throw error;
   }
 
@@ -301,14 +279,8 @@ router.post("/orders/:id/cancel-request", async (req, res): Promise<void> => {
 
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { reason } = req.body;
-
-  if (!reason) { res.status(400).json({ error: "سبب الإلغاء مطلوب" }); return; }
-
-  if (typeof reason !== "string" || reason.trim().length < 5 || reason.trim().length > 500) {
-    res.status(400).json({ error: "سبب الإلغاء يجب أن يكون بين 5 و500 حرف" });
-    return;
-  }
+  const input = parseBody(cancellationRequestSchema, req.body, res); if (!input) return;
+  const { reason } = input;
 
   const [order] = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, id), eq(ordersTable.customerId, req.session.customerId as number)));
@@ -330,9 +302,15 @@ router.post("/orders/:id/cancel-request", async (req, res): Promise<void> => {
     return;
   }
 
-  const [cr] = await db.insert(cancellationRequestsTable).values({
-    orderId: id, customerId: req.session.customerId as number, reason: reason.trim(), status: "pending",
-  }).returning();
+  let cr: typeof cancellationRequestsTable.$inferSelect;
+  try {
+    [cr] = await db.insert(cancellationRequestsTable).values({
+      orderId: id, customerId: req.session.customerId as number, reason, status: "pending",
+    }).returning();
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") { res.status(409).json({ error: "يوجد طلب إلغاء قيد المراجعة بالفعل" }); return; }
+    throw error;
+  }
 
   res.status(201).json({ id: cr.id, orderId: cr.orderId, reason: cr.reason, status: cr.status, createdAt: cr.createdAt });
 });
@@ -342,7 +320,8 @@ router.patch("/customers/me/profile", async (req, res): Promise<void> => {
   
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  const { name, email, mobile } = req.body;
+  const input = parseBody(profileSchema, req.body, res); if (!input) return;
+  const { name, email, mobile } = input;
   const [customer] = await db.update(customersTable)
     .set({ ...(name && { name }), ...(email && { email }), ...(mobile && { mobile }) })
     .where(eq(customersTable.id, req.session.customerId as number))
@@ -402,11 +381,8 @@ router.get("/customers/me/addresses", async (req, res): Promise<void> => {
 
 router.post("/customers/me/addresses", async (req, res): Promise<void> => {
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  const { governorateId, city, detailedAddress, landmark, isDefault } = req.body;
-  if (!Number.isInteger(governorateId) || !city?.trim() || !detailedAddress?.trim()) {
-    res.status(400).json({ error: "بيانات العنوان المطلوبة ناقصة" });
-    return;
-  }
+  const input = parseBody(addressSchema, req.body, res); if (!input) return;
+  const { governorateId, city, detailedAddress, landmark, isDefault } = input;
   const [governorate] = await db.select().from(governoratesTable)
     .where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
@@ -440,20 +416,21 @@ router.patch("/customers/me/addresses/:id", async (req, res): Promise<void> => {
   const [existing] = await db.select().from(addressesTable).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId)));
   if (!existing) { res.status(404).json({ error: "العنوان غير موجود" }); return; }
 
-  const governorateId = req.body.governorateId ?? existing.governorateId;
+  const input = parseBody(addressSchema.partial(), req.body, res); if (!input) return;
+  const governorateId = input.governorateId ?? existing.governorateId;
   const [governorate] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
   const updated = await db.transaction(async tx => {
-    if (req.body.isDefault) {
+    if (input.isDefault) {
       await tx.update(addressesTable).set({ isDefault: false }).where(eq(addressesTable.customerId, req.session.customerId!));
     }
     const [address] = await tx.update(addressesTable).set({
       governorateId,
       governorateName: governorate.nameAr,
-      city: req.body.city?.trim() || existing.city,
-      detailedAddress: req.body.detailedAddress?.trim() || existing.detailedAddress,
-      landmark: req.body.landmark === undefined ? existing.landmark : req.body.landmark?.trim() || null,
-      isDefault: req.body.isDefault === undefined ? existing.isDefault : Boolean(req.body.isDefault),
+      city: input.city || existing.city,
+      detailedAddress: input.detailedAddress || existing.detailedAddress,
+      landmark: input.landmark === undefined ? existing.landmark : input.landmark || null,
+      isDefault: input.isDefault === undefined ? existing.isDefault : input.isDefault,
     }).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId!))).returning();
     return address;
   });

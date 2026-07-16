@@ -323,9 +323,9 @@ async function seed() {
     }
 
     const employeeFixtures = [
-      { name: "مسؤول المبيعات", email: "sales@maktaba.com", role: "sales" as const, permissions: ["orders.view", "orders.edit", "customers.view"] },
-      { name: "أمين المخزن", email: "warehouse@maktaba.com", role: "warehouse" as const, permissions: ["products.view", "inventory.adjust"] },
-      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "content.manage"] },
+      { name: "مسؤول المبيعات", email: "sales@maktaba.com", role: "sales" as const, permissions: ["dashboard.view", "orders.view", "orders.edit", "customers.view"] },
+      { name: "أمين المخزن", email: "warehouse@maktaba.com", role: "warehouse" as const, permissions: ["products.view", "inventory.view", "inventory.adjust"] },
+      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "classifications.view", "content.manage"] },
     ];
     const employeePasswordHash = await bcrypt.hash("Employee@2025", 12);
     for (const employee of employeeFixtures) {
