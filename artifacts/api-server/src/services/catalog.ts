@@ -40,6 +40,15 @@ function emptySummary(product: typeof productsTable.$inferSelect) {
     educationType: product.educationType,
     schoolYear: product.schoolYear,
     author: product.author,
+    customerNoticeEnabled: product.customerNoticeEnabled,
+    customerNoticeTitle: product.customerNoticeTitle,
+    customerNoticeMessage: product.customerNoticeMessage,
+    customerNoticeButtonText: product.customerNoticeButtonText,
+    customerNoticeType: product.customerNoticeType,
+    customerNoticeTrigger: product.customerNoticeTrigger,
+    customerNoticeStartAt: product.customerNoticeStartAt,
+    customerNoticeEndAt: product.customerNoticeEndAt,
+    customerNoticeDismissible: product.customerNoticeDismissible,
   };
 }
 

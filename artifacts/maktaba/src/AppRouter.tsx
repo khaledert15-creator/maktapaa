@@ -28,13 +28,13 @@ const AdminLogin = lazy(() => import("@/pages/AdminLogin"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
 const AdminProductForm = lazy(() => import("@/pages/Stubs").then(module => ({ default: module.AdminProductForm })));
-const AdminOrders = lazy(() => import("@/pages/Stubs").then(module => ({ default: module.AdminOrders })));
-const AdminOrderDetail = lazy(() => import("@/pages/Stubs").then(module => ({ default: module.AdminOrderDetail })));
+const AdminOrders = lazy(() => import("@/pages/AdminOrders").then(module => ({ default: module.AdminOrders })));
+const AdminOrderDetail = lazy(() => import("@/pages/AdminOrders").then(module => ({ default: module.AdminOrderDetail })));
 const AdminCustomers = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminCustomers })));
 const AdminInventory = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminInventory })));
-const AdminCoupons = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminCoupons })));
-const AdminShipping = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminShipping })));
-const AdminClassifications = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminClassifications })));
+const AdminCoupons = lazy(() => import("@/pages/AdminOperations").then(module => ({ default: module.AdminCoupons })));
+const AdminShipping = lazy(() => import("@/pages/AdminOperations").then(module => ({ default: module.AdminShipping })));
+const AdminClassifications = lazy(() => import("@/pages/AdminOperations").then(module => ({ default: module.AdminClassifications })));
 const AdminContent = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminContent })));
 const AdminReports = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminReports })));
 const AdminEmployees = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminEmployees })));
@@ -49,7 +49,7 @@ export function AppRouter() {
       {/* Admin: protected routes with AdminLayout */}
       <Route path="/admin">
         {() => (
-          <AdminLayout>
+          <AdminLayout requiredPermission="dashboard.view">
             <Switch>
               <Route path="/admin" component={AdminDashboard} />
               <Route component={NotFound} />
@@ -59,47 +59,47 @@ export function AppRouter() {
       </Route>
       <Route path="/admin/products/new">
         {() => (
-          <AdminLayout>
+          <AdminLayout requiredPermission="products.create">
             <AdminProductForm />
           </AdminLayout>
         )}
       </Route>
       <Route path="/admin/products/:id/edit">
         {() => (
-          <AdminLayout>
+          <AdminLayout requiredPermission="products.edit">
             <AdminProductForm />
           </AdminLayout>
         )}
       </Route>
       <Route path="/admin/products">
         {() => (
-          <AdminLayout>
+          <AdminLayout requiredPermission="products.view">
             <AdminProducts />
           </AdminLayout>
         )}
       </Route>
       <Route path="/admin/orders/:id">
         {() => (
-          <AdminLayout>
+          <AdminLayout requiredPermission="orders.view">
             <AdminOrderDetail />
           </AdminLayout>
         )}
       </Route>
       <Route path="/admin/orders">
         {() => (
-          <AdminLayout>
+          <AdminLayout requiredPermission="orders.view">
             <AdminOrders />
           </AdminLayout>
         )}
       </Route>
-      <Route path="/admin/customers">{() => <AdminLayout><AdminCustomers /></AdminLayout>}</Route>
-      <Route path="/admin/inventory">{() => <AdminLayout><AdminInventory /></AdminLayout>}</Route>
-      <Route path="/admin/coupons">{() => <AdminLayout><AdminCoupons /></AdminLayout>}</Route>
-      <Route path="/admin/shipping">{() => <AdminLayout><AdminShipping /></AdminLayout>}</Route>
-      <Route path="/admin/classifications">{() => <AdminLayout><AdminClassifications /></AdminLayout>}</Route>
-      <Route path="/admin/content">{() => <AdminLayout><AdminContent /></AdminLayout>}</Route>
-      <Route path="/admin/reports">{() => <AdminLayout><AdminReports /></AdminLayout>}</Route>
-      <Route path="/admin/employees">{() => <AdminLayout><AdminEmployees /></AdminLayout>}</Route>
+      <Route path="/admin/customers">{() => <AdminLayout requiredPermission="customers.view"><AdminCustomers /></AdminLayout>}</Route>
+      <Route path="/admin/inventory">{() => <AdminLayout requiredPermission="inventory.view"><AdminInventory /></AdminLayout>}</Route>
+      <Route path="/admin/coupons">{() => <AdminLayout requiredPermission="coupons.view"><AdminCoupons /></AdminLayout>}</Route>
+      <Route path="/admin/shipping">{() => <AdminLayout requiredPermission="shipping.view"><AdminShipping /></AdminLayout>}</Route>
+      <Route path="/admin/classifications">{() => <AdminLayout requiredPermission="classifications.view"><AdminClassifications /></AdminLayout>}</Route>
+      <Route path="/admin/content">{() => <AdminLayout requiredPermission="content.manage"><AdminContent /></AdminLayout>}</Route>
+      <Route path="/admin/reports">{() => <AdminLayout requiredPermission="reports.view"><AdminReports /></AdminLayout>}</Route>
+      <Route path="/admin/employees">{() => <AdminLayout requiredPermission="employees.manage"><AdminEmployees /></AdminLayout>}</Route>
       <Route path="/admin/:rest*">
         {() => (
           <AdminLayout>

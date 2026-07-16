@@ -12,6 +12,7 @@ import { ProductSection } from "@/components/storefront/ProductSection";
 import { Seo } from "@/components/storefront/Seo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { type ProductNotice, useProductNotice } from "@/components/storefront/ProductNoticeModal";
 
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -34,6 +35,7 @@ export default function ProductDetail() {
   const addFavorite = useAddFavorite({ mutation: { onSuccess: refreshFavorites } });
   const removeFavorite = useRemoveFavorite({ mutation: { onSuccess: refreshFavorites } });
   const addToCart = useAddToCart({ mutation: { onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() }) } });
+  const notice = useProductNotice(product as unknown as ProductNotice | undefined, true);
 
   useEffect(() => { if (product) setSelectedImage(product.images[0] || product.coverImage || null); }, [product]);
   useEffect(() => {
@@ -45,11 +47,12 @@ export default function ProductDetail() {
     } catch { localStorage.removeItem("maktaba_recently_viewed"); }
   }, [product]);
 
-  const add = async (buyNow = false) => {
+  const performAdd = async (buyNow = false) => {
     if (!product) return;
     try { await addToCart.mutateAsync({ data: { productId: product.id, quantity } }); toast({ title: "تمت الإضافة إلى السلة" }); if (buyNow) setLocation("/checkout"); }
     catch { toast({ title: "تعذر إضافة المنتج", variant: "destructive" }); }
   };
+  const add = (buyNow = false) => notice.request(buyNow ? "buy_now" : "add_to_cart", () => void performAdd(buyNow));
   const toggleFavorite = () => {
     if (!product) return;
     if (!customer) { setLocation(`/login?next=/product/${product.slug}`); return; }
@@ -61,8 +64,8 @@ export default function ProductDetail() {
     else { await navigator.clipboard.writeText(window.location.href); toast({ title: "تم نسخ رابط المنتج" }); }
   };
   const deliveryRange = useMemo(() => {
-    const days = governorates?.filter(item => item.isActive).map(item => item.estimatedDays).filter(Boolean) || [];
-    return days.length ? `${Math.min(...days)}–${Math.max(...days)} أيام عمل حسب المحافظة` : "تظهر المدة الدقيقة بعد اختيار المحافظة";
+    const ranges = (governorates || []).filter(item => item.isActive).map(item => item as typeof item & { minDeliveryDays?: number; maxDeliveryDays?: number });
+    return ranges.length ? `${Math.min(...ranges.map(item => item.minDeliveryDays ?? item.estimatedDays))}–${Math.max(...ranges.map(item => item.maxDeliveryDays ?? item.estimatedDays))} أيام عمل حسب المحافظة` : "تظهر المدة الدقيقة بعد اختيار المحافظة";
   }, [governorates]);
 
   const responsiveImages = (product as typeof product & { imageVariants?: { url: string; srcSet?: string | null; width?: number | null; height?: number | null }[] } | undefined)?.imageVariants || [];
@@ -94,5 +97,6 @@ export default function ProductDetail() {
     {product.descriptionFull && <section className="mt-14 rounded-3xl border bg-white p-6 sm:p-9"><h2 className="mb-4 text-2xl font-black">تفاصيل الكتاب</h2><div className="whitespace-pre-line leading-9 text-muted-foreground">{product.descriptionFull}</div></section>}
     <div className="mt-12"><ProductSection title="يُشترى معه غالبًا" products={frequentlyBought} /></div><ProductSection title="كتب مرتبطة" products={related} tone="soft" />
     <Dialog open={zoomOpen} onOpenChange={setZoomOpen}><DialogContent className="max-w-4xl border-none bg-white p-3"><DialogTitle className="sr-only">صورة {product.nameAr}</DialogTitle>{selectedImage && <img src={selectedImage} alt={product.nameAr} className="max-h-[85vh] w-full object-contain" />}</DialogContent></Dialog>
+    {notice.modal}
   </div>;
 }

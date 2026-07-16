@@ -21,7 +21,9 @@ export const couponsTable = pgTable("coupons", {
   startDate: text("start_date"),
   endDate: text("end_date"),
   isActive: boolean("is_active").notNull().default(true),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, table => [
   uniqueIndex("coupons_code_case_insensitive_unique").on(sql`lower(${table.code})`),
   index("coupons_active_dates_idx").on(table.isActive, table.startDate, table.endDate),
@@ -46,6 +48,6 @@ export const couponUsageTable = pgTable("coupon_usage", {
   check("coupon_usage_discount_non_negative", sql`${table.discountAmount} >= 0`),
 ]);
 
-export const insertCouponSchema = createInsertSchema(couponsTable).omit({ id: true, createdAt: true, usedCount: true });
+export const insertCouponSchema = createInsertSchema(couponsTable).omit({ id: true, createdAt: true, updatedAt: true, archivedAt: true, usedCount: true });
 export type InsertCoupon = z.infer<typeof insertCouponSchema>;
 export type Coupon = typeof couponsTable.$inferSelect;

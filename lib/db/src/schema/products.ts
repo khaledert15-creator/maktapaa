@@ -6,9 +6,11 @@ import { stagesTable } from "./classifications";
 import { gradesTable } from "./classifications";
 import { subjectsTable } from "./classifications";
 import { publishersTable } from "./classifications";
-import { categoriesTable } from "./classifications";
+import { categoriesTable, subcategoriesTable } from "./classifications";
 
 export const productStatusEnum = pgEnum("product_status", ["active", "draft", "archived"]);
+export const customerNoticeTypeEnum = pgEnum("customer_notice_type", ["information", "warning", "preorder", "delayed_delivery", "custom"]);
+export const customerNoticeTriggerEnum = pgEnum("customer_notice_trigger", ["product_open", "add_to_cart", "buy_now", "checkout", "first_interaction"]);
 
 export const productsTable = pgTable("products", {
   id: serial("id").primaryKey(),
@@ -37,6 +39,7 @@ export const productsTable = pgTable("products", {
   subjectId: integer("subject_id").references(() => subjectsTable.id, { onDelete: "set null" }),
   publisherId: integer("publisher_id").references(() => publishersTable.id, { onDelete: "set null" }),
   categoryId: integer("category_id").references(() => categoriesTable.id, { onDelete: "set null" }),
+  subcategoryId: integer("subcategory_id").references(() => subcategoriesTable.id, { onDelete: "set null" }),
   educationType: text("education_type"), // عربي / لغات / أزهر
   bookType: text("book_type"),
   edition: text("edition"),
@@ -56,6 +59,16 @@ export const productsTable = pgTable("products", {
   freeShippingBadgeText: text("free_shipping_badge_text"),
   seoTitle: text("seo_title"),
   seoDescription: text("seo_description"),
+
+  customerNoticeEnabled: boolean("customer_notice_enabled").notNull().default(false),
+  customerNoticeTitle: text("customer_notice_title"),
+  customerNoticeMessage: text("customer_notice_message"),
+  customerNoticeButtonText: text("customer_notice_button_text"),
+  customerNoticeType: customerNoticeTypeEnum("customer_notice_type"),
+  customerNoticeTrigger: customerNoticeTriggerEnum("customer_notice_trigger"),
+  customerNoticeStartAt: timestamp("customer_notice_start_at", { withTimezone: true }),
+  customerNoticeEndAt: timestamp("customer_notice_end_at", { withTimezone: true }),
+  customerNoticeDismissible: boolean("customer_notice_dismissible").notNull().default(false),
 
   sortOrder: integer("sort_order").notNull().default(0),
   salesCount: integer("sales_count").notNull().default(0),
@@ -78,6 +91,7 @@ export const productsTable = pgTable("products", {
   check("products_stock_non_negative", sql`${table.stockQuantity} >= 0`),
   check("products_reserved_stock_non_negative", sql`${table.reservedQuantity} >= 0`),
   check("products_min_stock_non_negative", sql`${table.minStockLevel} >= 0`),
+  check("products_customer_notice_dates_valid", sql`${table.customerNoticeEndAt} IS NULL OR ${table.customerNoticeStartAt} IS NULL OR ${table.customerNoticeEndAt} >= ${table.customerNoticeStartAt}`),
 ]);
 
 export const productImagesTable = pgTable("product_images", {

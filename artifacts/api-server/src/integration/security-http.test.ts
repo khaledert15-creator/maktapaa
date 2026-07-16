@@ -9,6 +9,7 @@ import {
   auditLogsTable, cancellationRequestsTable, couponUsageTable, couponsTable, db,
   governoratesTable, orderItemsTable, ordersTable, pool, productsTable, reviewsTable,
   stockMovementsTable, usersTable, customersTable,
+  stagesTable,
 } from "@workspace/db";
 import { CouponValidationError, validateCoupon } from "../services/coupons";
 import { OrderStateError, transitionOrderStatus } from "../services/order-state";
@@ -20,6 +21,7 @@ const createdProductIds: number[] = [];
 const createdOrderIds: number[] = [];
 const createdCouponIds: number[] = [];
 const createdCustomerIds: number[] = [];
+const createdStageIds: number[] = [];
 
 before(async () => {
   server = app.listen(0);
@@ -33,6 +35,7 @@ after(async () => {
   for (const id of createdCouponIds) await db.delete(couponsTable).where(eq(couponsTable.id, id));
   for (const id of createdOrderIds) await db.delete(ordersTable).where(eq(ordersTable.id, id));
   for (const id of createdProductIds) await db.delete(productsTable).where(eq(productsTable.id, id));
+  for (const id of createdStageIds) await db.delete(stagesTable).where(eq(stagesTable.id, id));
   for (const id of createdCustomerIds) await db.delete(customersTable).where(eq(customersTable.id, id));
   for (const id of createdUserIds) await db.delete(usersTable).where(eq(usersTable.id, id));
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
@@ -237,4 +240,104 @@ test("SEO product rendering returns metadata, structured data, dynamic sitemap a
   assert.equal(sitemap.status, 200);
   assert.match(sitemapXml, new RegExp(`/product/${product.slug}`));
   assert.match(sitemapXml, new RegExp(`http://localhost:5173/product/${product.slug}`));
+});
+
+test("admin UX APIs persist delivery ranges and protect classification dependencies", async () => {
+  const adminCredentials = await createAdmin("administrator", []);
+  const cookie = await login(adminCredentials.user.email, adminCredentials.password);
+  const [governorate] = await db.select().from(governoratesTable).limit(1);
+  const invalidRange = await request(`/api/admin/shipping/governorates/${governorate.id}`, cookie, { method: "PATCH", body: JSON.stringify({ minDeliveryDays: 5, maxDeliveryDays: 2 }) });
+  assert.equal(invalidRange.status, 400);
+  const updatedRange = await request(`/api/admin/shipping/governorates/${governorate.id}`, cookie, { method: "PATCH", body: JSON.stringify({ minDeliveryDays: 1, maxDeliveryDays: 4, shippingCost: Number(governorate.shippingCost), freeShippingThreshold: governorate.freeShippingThreshold == null ? null : Number(governorate.freeShippingThreshold) }) });
+  assert.equal(updatedRange.status, 200);
+  const publicGovernorates = await fetch(`${baseUrl}/api/governorates`).then(response => response.json()) as { id: number; minDeliveryDays: number; maxDeliveryDays: number; estimatedDeliveryText: string }[];
+  const publicGovernorate = publicGovernorates.find(row => row.id === governorate.id);
+  assert.equal(publicGovernorate?.minDeliveryDays, 1);
+  assert.equal(publicGovernorate?.maxDeliveryDays, 4);
+  assert.match(publicGovernorate?.estimatedDeliveryText || "", /1.*4/);
+  await db.update(governoratesTable).set({ minDeliveryDays: governorate.minDeliveryDays, maxDeliveryDays: governorate.maxDeliveryDays }).where(eq(governoratesTable.id, governorate.id));
+
+  const stageName = `مرحلة اختبار ${randomUUID()}`;
+  const createdResponse = await request("/api/admin/classifications/stages", cookie, { method: "POST", body: JSON.stringify({ nameAr: stageName, nameEn: "UX test", sortOrder: 99, isActive: true }) });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json() as { id: number };
+  createdStageIds.push(created.id);
+  const edited = await request(`/api/admin/classifications/stages/${created.id}`, cookie, { method: "PATCH", body: JSON.stringify({ nameEn: "Edited", sortOrder: 100 }) });
+  assert.equal(edited.status, 200);
+  const suffix = randomUUID();
+  const [product] = await db.insert(productsTable).values({ nameAr: `تصنيف مرتبط ${suffix}`, slug: `classification-${suffix}`, price: "20", stockQuantity: 2, status: "active", stageId: created.id }).returning();
+  createdProductIds.push(product.id);
+  const blockedDelete = await request(`/api/admin/classifications/stages/${created.id}`, cookie, { method: "DELETE" });
+  assert.equal(blockedDelete.status, 409);
+  assert.equal((await blockedDelete.json() as { relatedProducts: number }).relatedProducts, 1);
+  const deactivated = await request(`/api/admin/classifications/stages/${created.id}?mode=deactivate`, cookie, { method: "DELETE" });
+  assert.equal(deactivated.status, 200);
+  assert.equal((await db.select().from(stagesTable).where(eq(stagesTable.id, created.id)))[0].isActive, false);
+
+  const replacementResponse = await request("/api/admin/classifications/stages", cookie, { method: "POST", body: JSON.stringify({ nameAr: `مرحلة بديلة ${suffix}`, sortOrder: 100 }) });
+  const replacement = await replacementResponse.json() as { id: number };
+  createdStageIds.push(replacement.id);
+  const reassigned = await request(`/api/admin/classifications/stages/${created.id}/reassign`, cookie, { method: "POST", body: JSON.stringify({ targetId: replacement.id }) });
+  assert.equal(reassigned.status, 200);
+  assert.equal((await db.select().from(productsTable).where(eq(productsTable.id, product.id)))[0].stageId, replacement.id);
+  const deleteAfterReassign = await request(`/api/admin/classifications/stages/${created.id}`, cookie, { method: "DELETE" });
+  assert.equal(deleteAfterReassign.status, 200);
+
+  const unusedResponse = await request("/api/admin/classifications/stages", cookie, { method: "POST", body: JSON.stringify({ nameAr: `غير مستخدم ${suffix}`, sortOrder: 101 }) });
+  const unused = await unusedResponse.json() as { id: number };
+  const hardDelete = await request(`/api/admin/classifications/stages/${unused.id}`, cookie, { method: "DELETE" });
+  assert.equal(hardDelete.status, 200);
+  assert.equal((await hardDelete.json() as { mode: string }).mode, "deleted");
+
+  const teacherResponse = await request("/api/admin/classifications/teachers", cookie, { method: "POST", body: JSON.stringify({ nameAr: `مدرس قديم ${suffix}` }) });
+  assert.equal(teacherResponse.status, 201);
+  const teacher = await teacherResponse.json() as { id: number };
+  await db.update(productsTable).set({ author: `مدرس قديم ${suffix}` }).where(eq(productsTable.id, product.id));
+  const renamedTeacher = await request(`/api/admin/classifications/teachers/${teacher.id}`, cookie, { method: "PATCH", body: JSON.stringify({ nameAr: `مدرس جديد ${suffix}` }) });
+  assert.equal(renamedTeacher.status, 200);
+  assert.equal((await db.select().from(productsTable).where(eq(productsTable.id, product.id)))[0].author, `مدرس جديد ${suffix}`);
+  await db.update(productsTable).set({ author: null }).where(eq(productsTable.id, product.id));
+  assert.equal((await request(`/api/admin/classifications/teachers/${teacher.id}`, cookie, { method: "DELETE" })).status, 200);
+});
+
+test("coupon archive, product notices and detailed orders are database-backed and permission protected", async () => {
+  const adminCredentials = await createAdmin("administrator", []); const cookie = await login(adminCredentials.user.email, adminCredentials.password); const suffix = randomUUID();
+  const unusedCreate = await request("/api/admin/coupons", cookie, { method: "POST", body: JSON.stringify({ code: `UNUSED-${suffix}`, type: "fixed", value: 5, minOrderAmount: 20 }) });
+  const unused = await unusedCreate.json() as { id: number }; createdCouponIds.push(unused.id);
+  const editedCoupon = await request(`/api/admin/coupons/${unused.id}`, cookie, { method: "PATCH", body: JSON.stringify({ value: 7, isActive: false }) });
+  assert.equal(editedCoupon.status, 200);
+  const editedCouponBody = await editedCoupon.json() as { value: number; isActive: boolean };
+  assert.equal(editedCouponBody.value, 7);
+  assert.equal(editedCouponBody.isActive, false);
+  const duplicateCoupon = await request(`/api/admin/coupons/${unused.id}/duplicate`, cookie, { method: "POST", body: JSON.stringify({ code: `COPY-${suffix}` }) });
+  assert.equal(duplicateCoupon.status, 201);
+  const duplicate = await duplicateCoupon.json() as { id: number; isActive: boolean }; createdCouponIds.push(duplicate.id);
+  assert.equal(duplicate.isActive, false);
+  assert.equal((await request(`/api/admin/coupons/${duplicate.id}`, cookie, { method: "DELETE" })).status, 200);
+  const unusedDelete = await request(`/api/admin/coupons/${unused.id}`, cookie, { method: "DELETE" });
+  assert.equal((await unusedDelete.json() as { mode: string }).mode, "deleted");
+  const [governorate] = await db.select().from(governoratesTable).limit(1);
+  const [order] = await db.insert(ordersTable).values({ orderNumber: `MK-UX-${suffix}`, customerName: "عميل تجربة الإدارة", mobile: "01000000000", governorateName: governorate.nameAr, city: "اختبار", detailedAddress: "عنوان تفصيلي للاختبار", subtotal: "50", shippingBaseCost: "10", shippingSurcharge: "2", shippingDiscount: "0", shippingCost: "12", shippingRuleSnapshot: { minDeliveryDays: 1, maxDeliveryDays: 3 }, total: "62" }).returning();
+  createdOrderIds.push(order.id);
+  const [used] = await db.insert(couponsTable).values({ code: `USED-${suffix}`, type: "fixed", value: "5", usedCount: 1 }).returning(); createdCouponIds.push(used.id);
+  await db.insert(couponUsageTable).values({ couponId: used.id, orderId: order.id, discountAmount: "5" });
+  const archive = await request(`/api/admin/coupons/${used.id}`, cookie, { method: "DELETE" });
+  assert.equal((await archive.json() as { mode: string }).mode, "archived");
+  assert.ok((await db.select().from(couponsTable).where(eq(couponsTable.id, used.id)))[0].archivedAt);
+
+  const [product] = await db.insert(productsTable).values({ nameAr: `حجز مسبق ${suffix}`, slug: `notice-${suffix}`, price: "75", stockQuantity: 3, status: "active" }).returning(); createdProductIds.push(product.id);
+  const allowed = await createAdmin("content_manager", ["products.view", "products.edit", "products.notices.manage"]); const allowedCookie = await login(allowed.user.email, allowed.password);
+  const noticeUpdate = await request(`/api/admin/products/${product.id}`, allowedCookie, { method: "PATCH", body: JSON.stringify({ customerNoticeEnabled: true, customerNoticeTitle: "هذا الكتاب متاح بالحجز المسبق", customerNoticeMessage: "سيتم التواصل معك عند توفر الكتاب.", customerNoticeButtonText: "موافق، متابعة الطلب", customerNoticeType: "preorder", customerNoticeTrigger: "add_to_cart", customerNoticeDismissible: false }) });
+  assert.equal(noticeUpdate.status, 200);
+  const publicProduct = await fetch(`${baseUrl}/api/products/${product.slug}`).then(response => response.json()) as { customerNoticeEnabled: boolean; customerNoticeTitle: string; customerNoticeTrigger: string };
+  assert.deepEqual({ enabled: publicProduct.customerNoticeEnabled, title: publicProduct.customerNoticeTitle, trigger: publicProduct.customerNoticeTrigger }, { enabled: true, title: "هذا الكتاب متاح بالحجز المسبق", trigger: "add_to_cart" });
+  const cart = await fetch(`${baseUrl}/api/cart/items`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.id, quantity: 1 }) }).then(response => response.json()) as { items: { customerNoticeTitle?: string }[] };
+  assert.equal(cart.items[0].customerNoticeTitle, "هذا الكتاب متاح بالحجز المسبق");
+  const denied = await createAdmin("content_manager", ["products.view", "products.edit", "orders.view"]); const deniedCookie = await login(denied.user.email, denied.password);
+  assert.equal((await request(`/api/admin/products/${product.id}`, deniedCookie, { method: "PATCH", body: JSON.stringify({ customerNoticeEnabled: false }) })).status, 403);
+
+  const detail = await request(`/api/admin/orders/${order.id}`, deniedCookie); assert.equal(detail.status, 200);
+  const detailBody = await detail.json() as { shippingRuleSnapshot: { minDeliveryDays: number }; inventoryMovements: unknown[]; auditHistory: unknown[] };
+  assert.equal(detailBody.shippingRuleSnapshot.minDeliveryDays, 1); assert.ok(Array.isArray(detailBody.inventoryMovements)); assert.ok(Array.isArray(detailBody.auditHistory));
+  assert.equal((await request(`/api/admin/orders/${order.id}/status`, deniedCookie, { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) })).status, 403);
 });

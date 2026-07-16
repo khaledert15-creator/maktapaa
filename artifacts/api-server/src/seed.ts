@@ -5,6 +5,7 @@ import {
   productImagesTable, citiesTable, customersTable, ordersTable, orderItemsTable,
   orderStatusHistoryTable, stockMovementsTable, couponsTable, auditLogsTable,
   addressesTable, favoritesTable,
+  classificationOptionsTable,
 } from "@workspace/db";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
@@ -82,8 +83,8 @@ async function seed() {
 
   // Governorates
   const governoratesData = [
-    { nameAr: "القاهرة", nameEn: "Cairo", shippingCost: "35", estimatedDays: 1 },
-    { nameAr: "الجيزة", nameEn: "Giza", shippingCost: "35", estimatedDays: 2 },
+    { nameAr: "القاهرة", nameEn: "Cairo", shippingCost: "35", estimatedDays: 2, minDeliveryDays: 1, maxDeliveryDays: 2 },
+    { nameAr: "الجيزة", nameEn: "Giza", shippingCost: "35", estimatedDays: 2, minDeliveryDays: 1, maxDeliveryDays: 2 },
     { nameAr: "الإسكندرية", nameEn: "Alexandria", shippingCost: "45", estimatedDays: 2 },
     { nameAr: "الدقهلية", nameEn: "Dakahlia", shippingCost: "45", estimatedDays: 3 },
     { nameAr: "الشرقية", nameEn: "Sharqia", shippingCost: "45", estimatedDays: 3 },
@@ -111,7 +112,7 @@ async function seed() {
     { nameAr: "الوادي الجديد", nameEn: "New Valley", shippingCost: "85", estimatedDays: 7 },
   ];
   const existingGovernorates = await db.select().from(governoratesTable);
-  const govs = existingGovernorates.length ? existingGovernorates : await db.insert(governoratesTable).values(governoratesData).returning();
+  const govs = existingGovernorates.length ? existingGovernorates : await db.insert(governoratesTable).values(governoratesData.map(row => ({ ...row, minDeliveryDays: "minDeliveryDays" in row ? row.minDeliveryDays : Math.max(1, row.estimatedDays - 1), maxDeliveryDays: "maxDeliveryDays" in row ? row.maxDeliveryDays : row.estimatedDays }))).returning();
   console.log(`✅ ${govs.length} governorates`);
 
   // Default admin user
@@ -286,12 +287,13 @@ async function seed() {
       const category = allCategories.find(item => stageName && item.nameAr.includes(stageName))
         ?? (product.isRevision ? allCategories.find(item => item.slug === "revision") : undefined)
         ?? (product.isBundle ? allCategories.find(item => item.slug === "bundles") : undefined);
-      await tx.update(productsTable).set({
+      const storefrontDefaults = {
         ...(product.categoryId == null && category ? { categoryId: category.id } : {}),
         ...(product.oldPrice && Number(product.oldPrice) > Number(product.price) ? { isOffer: true } : {}),
         ...(product.schoolYear == null ? { schoolYear: "2026/2027" } : {}),
         ...(index === 0 && !product.freeShipping ? { freeShipping: true, freeShippingBadgeText: "شحن مجاني" } : {}),
-      }).where(eq(productsTable.id, product.id));
+      };
+      if (Object.keys(storefrontDefaults).length) await tx.update(productsTable).set(storefrontDefaults).where(eq(productsTable.id, product.id));
     }
 
     if (cairo) {
@@ -326,12 +328,23 @@ async function seed() {
     const employeeFixtures = [
       { name: "مسؤول المبيعات", email: "sales@maktaba.com", role: "sales" as const, permissions: ["dashboard.view", "orders.view", "orders.edit", "customers.view"] },
       { name: "أمين المخزن", email: "warehouse@maktaba.com", role: "warehouse" as const, permissions: ["products.view", "inventory.view", "inventory.adjust"] },
-      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "classifications.view", "content.manage"] },
+      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "products.notices.manage", "classifications.view", "classifications.manage", "content.manage"] },
     ];
     const employeePasswordHash = await bcrypt.hash("Employee@2025", 12);
     for (const employee of employeeFixtures) {
       const [found] = await tx.select().from(usersTable).where(eq(usersTable.email, employee.email));
       if (!found) await tx.insert(usersTable).values({ ...employee, passwordHash: employeePasswordHash });
+      else await tx.update(usersTable).set({ permissions: employee.permissions }).where(eq(usersTable.id, found.id));
+    }
+
+    const optionFixtures = [
+      { kind: "teacher" as const, values: ["أحمد السيد", "محمد عبد الجواد"] },
+      { kind: "school_year" as const, values: ["2025/2026", "2026/2027"] },
+      { kind: "education_type" as const, values: ["عربي", "لغات", "أزهر"] },
+    ];
+    for (const fixture of optionFixtures) {
+      const existingOptions = await tx.select().from(classificationOptionsTable).where(eq(classificationOptionsTable.kind, fixture.kind));
+      if (!existingOptions.length) await tx.insert(classificationOptionsTable).values(fixture.values.map((nameAr, index) => ({ kind: fixture.kind, nameAr, sortOrder: index + 1 })));
     }
 
     let [customer] = await tx.select().from(customersTable).where(eq(customersTable.mobile, "01012345678"));

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useAdminListProducts, useAdminDeleteProduct } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -12,13 +13,22 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Eye, Filter } from "lucide-react";
 import useDebounce from "@/hooks/use-debounce";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function AdminProducts() {
+  const { admin } = useAuth();
+  const can = (permission: string) => Boolean(admin && (admin.role === "owner" || admin.role === "administrator" || admin.permissions?.includes(permission)));
+  const canCreate = can("products.create");
+  const canEdit = can("products.edit");
+  const canDelete = can("products.delete");
+  const canSelect = canEdit || canDelete;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -43,14 +53,11 @@ export default function AdminProducts() {
   });
 
   const handleDelete = (id: number) => {
-    if (confirm("هل أنت متأكد من حذف هذا المنتج؟")) {
-      deleteMutation.mutate({ id });
-    }
+    setPendingDeleteId(id);
   };
 
-  const runBulk = async (action: 'active' | 'draft' | 'archive') => {
+  const executeBulk = async (action: 'active' | 'draft' | 'archive') => {
     if (!selected.size) return;
-    if (action === 'archive' && !confirm(`أرشفة ${selected.size} منتج؟`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/admin/products/${id}`, {
       method: action === 'archive' ? 'DELETE' : 'PATCH', credentials: 'include',
       headers: action === 'archive' ? undefined : { 'content-type': 'application/json' },
@@ -59,6 +66,15 @@ export default function AdminProducts() {
     setSelected(new Set());
     toast({ title: 'تم تنفيذ الإجراء الجماعي' });
     queryClient.invalidateQueries({ queryKey: ['/api/admin/products'] });
+  };
+
+  const runBulk = async (action: 'active' | 'draft' | 'archive') => {
+    if (!selected.size) return;
+    if (action === 'archive') {
+      setBulkArchiveOpen(true);
+      return;
+    }
+    await executeBulk(action);
   };
 
   const getStatusBadge = (status: string) => {
@@ -79,15 +95,15 @@ export default function AdminProducts() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold tracking-tight">إدارة المنتجات</h1>
-        <Button asChild>
+        {canCreate && <Button asChild>
           <Link href="/admin/products/new">
             <Plus className="ml-2 h-4 w-4" />
             إضافة منتج
           </Link>
-        </Button>
+        </Button>}
       </div>
 
-      {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-3"><strong>تم تحديد {selected.size}</strong><Button size="sm" onClick={() => void runBulk('active')}>تفعيل</Button><Button size="sm" variant="outline" onClick={() => void runBulk('draft')}>تحويل لمسودة</Button><Button size="sm" variant="destructive" onClick={() => void runBulk('archive')}>أرشفة</Button></div>}
+      {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-3"><strong>تم تحديد {selected.size}</strong>{canEdit && <><Button size="sm" onClick={() => void runBulk('active')}>تفعيل</Button><Button size="sm" variant="outline" onClick={() => void runBulk('draft')}>تحويل لمسودة</Button></>}{canDelete && <Button size="sm" variant="destructive" onClick={() => void runBulk('archive')}>أرشفة</Button>}</div>}
 
       <div className="bg-card border rounded-lg p-4 flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
@@ -121,7 +137,7 @@ export default function AdminProducts() {
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
-              <TableHead className="w-10"><input type="checkbox" aria-label="تحديد كل المنتجات" onChange={event => setSelected(event.target.checked ? new Set(productsData?.items.map(item => item.id) || []) : new Set())} /></TableHead>
+              <TableHead className="w-10">{canSelect && <input type="checkbox" aria-label="تحديد كل المنتجات" onChange={event => setSelected(event.target.checked ? new Set(productsData?.items.map(item => item.id) || []) : new Set())} />}</TableHead>
               <TableHead className="w-[80px]">صورة</TableHead>
               <TableHead>اسم الكتاب</TableHead>
               <TableHead>SKU</TableHead>
@@ -154,7 +170,7 @@ export default function AdminProducts() {
             ) : (
               productsData?.items.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell><input type="checkbox" checked={selected.has(product.id)} onChange={event => setSelected(current => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} /></TableCell>
+                  <TableCell>{canSelect && <input type="checkbox" aria-label={`تحديد ${product.nameAr}`} checked={selected.has(product.id)} onChange={event => setSelected(current => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} />}</TableCell>
                   <TableCell>
                     <div className="h-12 w-10 bg-muted rounded overflow-hidden">
                       {product.coverImage ? (
@@ -164,7 +180,6 @@ export default function AdminProducts() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{(product as typeof product & { freeShipping?: boolean }).freeShipping ? <Badge className="bg-emerald-100 text-emerald-800">مجاني</Badge> : <span className="text-muted-foreground">عادي</span>}</TableCell>
                   <TableCell className="font-medium max-w-[200px] truncate" title={product.nameAr}>
                     {product.nameAr}
                   </TableCell>
@@ -177,6 +192,7 @@ export default function AdminProducts() {
                       </span>
                     </div>
                   </TableCell>
+                  <TableCell>{(product as typeof product & { freeShipping?: boolean }).freeShipping ? <Badge className="bg-emerald-100 text-emerald-800">مجاني</Badge> : <span className="text-muted-foreground">عادي</span>}</TableCell>
                   <TableCell>{getStatusBadge(product.status)}</TableCell>
                   <TableCell className="text-left">
                     <DropdownMenu>
@@ -193,18 +209,18 @@ export default function AdminProducts() {
                             <Eye className="mr-2 h-4 w-4" /> عرض في المتجر
                           </Link>
                         </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
+                        {canEdit && <DropdownMenuItem asChild>
                           <Link href={`/admin/products/${product.id}/edit`} className="cursor-pointer">
                             <Pencil className="mr-2 h-4 w-4" /> تعديل البيانات
                           </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
+                        </DropdownMenuItem>}
+                        {canDelete && <DropdownMenuSeparator />}
+                        {canDelete && <DropdownMenuItem
                           className="text-destructive focus:text-destructive cursor-pointer"
                           onClick={() => handleDelete(product.id)}
                         >
                           <Trash2 className="mr-2 h-4 w-4" /> حذف المنتج
-                        </DropdownMenuItem>
+                        </DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -240,6 +256,30 @@ export default function AdminProducts() {
           </div>
         </div>
       )}
+      <AlertDialog open={pendingDeleteId !== null} onOpenChange={open => { if (!open) setPendingDeleteId(null); }}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف المنتج؟</AlertDialogTitle>
+            <AlertDialogDescription>لن يُحذف أي منتج مرتبط بطلبات سابقة. لا يمكن التراجع عن حذف المنتج غير المستخدم.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (pendingDeleteId !== null) deleteMutation.mutate({ id: pendingDeleteId }); setPendingDeleteId(null); }}>تأكيد الحذف</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={bulkArchiveOpen} onOpenChange={setBulkArchiveOpen}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>أرشفة المنتجات المحددة؟</AlertDialogTitle>
+            <AlertDialogDescription>سيتم أرشفة {selected.size} منتج وإخفاؤها من المتجر، مع الحفاظ على سجلات الطلبات.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setBulkArchiveOpen(false); void executeBulk('archive'); }}>أرشفة المنتجات</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

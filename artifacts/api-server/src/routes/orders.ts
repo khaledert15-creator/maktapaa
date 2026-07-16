@@ -135,7 +135,7 @@ router.post("/orders", orderRateLimit, async (req, res): Promise<void> => {
         couponCode: couponCode || null, shippingCost: String(shippingCost),
         shippingBaseCost: String(shipping.baseCost), shippingSurcharge: String(shipping.surcharge),
         shippingDiscount: String(shipping.discount), freeShippingReason: shipping.freeShippingReason,
-        shippingRuleSnapshot: { rule: shipping.rule, governorateId: gov.id, governorateName: gov.nameAr, city, cityId: matchedCity?.id ?? null, baseCost: shipping.baseCost, surcharge: shipping.surcharge, discount: shipping.discount, finalCost: shipping.finalCost, calculatedAt: new Date().toISOString() },
+        shippingRuleSnapshot: { rule: shipping.rule, governorateId: gov.id, governorateName: gov.nameAr, city, cityId: matchedCity?.id ?? null, baseCost: shipping.baseCost, surcharge: shipping.surcharge, discount: shipping.discount, finalCost: shipping.finalCost, minDeliveryDays: matchedCity?.minDeliveryDays ?? gov.minDeliveryDays, maxDeliveryDays: matchedCity?.maxDeliveryDays ?? gov.maxDeliveryDays, calculatedAt: new Date().toISOString() },
         total: String(total), status: "new",
       }).returning();
 

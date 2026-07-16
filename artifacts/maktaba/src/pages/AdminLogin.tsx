@@ -17,6 +17,24 @@ const formSchema = z.object({
   password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
 });
 
+function adminLandingPath(user: { role: string; permissions?: string[] | null }) {
+  if (user.role === "owner" || user.role === "administrator") return "/admin";
+  const routes = [
+    ["dashboard.view", "/admin"],
+    ["orders.view", "/admin/orders"],
+    ["inventory.view", "/admin/inventory"],
+    ["products.view", "/admin/products"],
+    ["customers.view", "/admin/customers"],
+    ["coupons.view", "/admin/coupons"],
+    ["shipping.view", "/admin/shipping"],
+    ["classifications.view", "/admin/classifications"],
+    ["content.manage", "/admin/content"],
+    ["reports.view", "/admin/reports"],
+    ["employees.manage", "/admin/employees"],
+  ] as const;
+  return routes.find(([permission]) => user.permissions?.includes(permission))?.[1] || "/admin";
+}
+
 export default function AdminLogin() {
   const [, setLocation] = useLocation();
   const { setAdmin } = useAuth();
@@ -34,7 +52,7 @@ export default function AdminLogin() {
         setAdmin(data.user);
         queryClient.invalidateQueries({ queryKey: getGetCurrentAdminQueryKey() });
         toast({ title: "تم تسجيل الدخول", description: "مرحباً بك في لوحة التحكم" });
-        setLocation("/admin");
+        setLocation(adminLandingPath(data.user));
       },
       onError: () => {
         toast({ title: "خطأ", description: "بيانات الدخول غير صحيحة", variant: "destructive" });

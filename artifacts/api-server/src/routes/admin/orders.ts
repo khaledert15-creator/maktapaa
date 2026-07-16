@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable } from "@workspace/db";
+import { auditLogsTable, cancellationRequestsTable, db, ordersTable, orderItemsTable, orderStatusHistoryTable, productsTable, stockMovementsTable } from "@workspace/db";
 import { eq, and, or, ilike, desc, gte, lte, sql } from "drizzle-orm";
 import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 import { writeAuditLog } from "../../services/audit";
@@ -14,7 +14,8 @@ const orderEditSchema = z.object({ customerName: z.string().trim().min(2).max(20
 const statusSchema = z.object({ status: orderStatuses, notes: z.string().max(2000).nullable().optional(), trackingNumber: z.string().max(200).nullable().optional(), shippingCompany: z.string().max(200).nullable().optional() });
 const cancellationSchema = z.object({ decision: z.enum(["approved", "rejected"]), notes: z.string().max(2000).nullable().optional() });
 
-function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof orderItemsTable.$inferSelect[], history: typeof orderStatusHistoryTable.$inferSelect[]) {
+type MovementRow = typeof stockMovementsTable.$inferSelect & { productNameAr?: string | null };
+function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof orderItemsTable.$inferSelect[], history: typeof orderStatusHistoryTable.$inferSelect[], movements: MovementRow[] = [], audits: (typeof auditLogsTable.$inferSelect)[] = [], cancellationRequests: (typeof cancellationRequestsTable.$inferSelect)[] = []) {
   return {
     id: order.id, orderNumber: order.orderNumber,
     status: order.status, paymentStatus: order.paymentStatus, paymentMethod: order.paymentMethod,
@@ -25,16 +26,22 @@ function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof ord
     subtotal: Number(order.subtotal), discount: Number(order.discount),
     couponDiscount: Number(order.couponDiscount), couponCode: order.couponCode,
     shippingCost: Number(order.shippingCost), total: Number(order.total),
+    shippingBaseCost: Number(order.shippingBaseCost), shippingSurcharge: Number(order.shippingSurcharge),
+    shippingDiscount: Number(order.shippingDiscount), freeShippingReason: order.freeShippingReason,
+    shippingRuleSnapshot: order.shippingRuleSnapshot,
     estimatedDeliveryDate: order.estimatedDeliveryDate,
     trackingNumber: order.trackingNumber, shippingCompany: order.shippingCompany,
     assignedTo: order.assignedToName,
-    cancellationReason: null,
+    cancellationReason: cancellationRequests[0]?.reason ?? null,
+    cancellationRequests: cancellationRequests.map(request => ({ id: request.id, reason: request.reason, status: request.status, employeeDecision: request.employeeDecision, employeeNotes: request.employeeNotes, decidedAt: request.decidedAt, createdAt: request.createdAt })),
     items: items.map(i => ({
       productId: i.productId, nameAr: i.nameAr, coverImage: i.coverImage,
       quantity: i.quantity, unitPrice: Number(i.unitPrice),
       subtotal: Number(i.subtotal), discount: Number(i.discount),
     })),
-    statusHistory: history.map(h => ({ status: h.status, notes: h.notes, createdAt: h.createdAt })),
+    statusHistory: history.map(h => ({ status: h.status, notes: h.notes, employeeName: h.employeeName, createdAt: h.createdAt })),
+    inventoryMovements: movements.map(movement => ({ id: movement.id, productId: movement.productId, productNameAr: movement.productNameAr, movementType: movement.movementType, quantityBefore: movement.quantityBefore, quantityAfter: movement.quantityAfter, quantityChanged: movement.quantityChanged, reason: movement.reason, employeeName: movement.employeeName, createdAt: movement.createdAt })),
+    auditHistory: audits.map(audit => ({ id: audit.id, action: audit.action, description: audit.description, employeeName: audit.employeeName, beforeData: audit.beforeData, afterData: audit.afterData, createdAt: audit.createdAt })),
     createdAt: order.createdAt, updatedAt: order.updatedAt,
   };
 }
@@ -75,14 +82,17 @@ router.get("/admin/orders/:id", requireAdminPermission("orders.view"), async (re
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!order) { res.status(404).json({ error: "الطلب غير موجود أو تم حذفه" }); return; }
 
-  const [items, history] = await Promise.all([
+  const [items, history, movements, audits, cancellationRequests] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id)),
     db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, id)).orderBy(desc(orderStatusHistoryTable.createdAt)),
+    db.select({ movement: stockMovementsTable, productNameAr: productsTable.nameAr }).from(stockMovementsTable).leftJoin(productsTable, eq(stockMovementsTable.productId, productsTable.id)).where(eq(stockMovementsTable.orderId, id)).orderBy(desc(stockMovementsTable.createdAt)),
+    db.select().from(auditLogsTable).where(and(eq(auditLogsTable.entityType, "order"), eq(auditLogsTable.entityId, String(id)))).orderBy(desc(auditLogsTable.createdAt)),
+    db.select().from(cancellationRequestsTable).where(eq(cancellationRequestsTable.orderId, id)).orderBy(desc(cancellationRequestsTable.createdAt)),
   ]);
 
-  res.json(mapAdminOrder(order, items, history));
+  res.json(mapAdminOrder(order, items, history, movements.map(({ movement, productNameAr }) => ({ ...movement, productNameAr })), audits, cancellationRequests));
 });
 
 router.patch("/admin/orders/:id", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
@@ -100,7 +110,7 @@ router.patch("/admin/orders/:id", requireAdminPermission("orders.edit"), async (
     ...(shippingCompany !== undefined && { shippingCompany }), ...(estimatedDeliveryDate !== undefined && { estimatedDeliveryDate }),
   }).where(eq(ordersTable.id, id)).returning();
 
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!order) { res.status(404).json({ error: "الطلب غير موجود أو تم حذفه" }); return; }
   await writeAuditLog(req, { action: "order.update", entityType: "order", entityId: id, description: `تعديل الطلب ${order.orderNumber}`, beforeData: before ?? null, afterData: order });
 
   const [items, history] = await Promise.all([

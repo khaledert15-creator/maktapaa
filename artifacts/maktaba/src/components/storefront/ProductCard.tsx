@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { type ProductNotice, useProductNotice } from "@/components/storefront/ProductNoticeModal";
 
 export function ProductCard({ product, isFavorite = false }: { product: ProductSummary; isFavorite?: boolean }) {
   const responsive = product as ProductSummary & { coverImageSrcSet?: string | null; coverImageWidth?: number | null; coverImageHeight?: number | null };
@@ -27,6 +28,7 @@ export function ProductCard({ product, isFavorite = false }: { product: ProductS
       onError: () => toast({ title: "تعذر إضافة المنتج", variant: "destructive" }),
     },
   });
+  const notice = useProductNotice(product as unknown as ProductNotice);
 
   const toggleFavorite = () => {
     if (!customer) { setLocation(`/login?next=${encodeURIComponent(window.location.pathname)}`); return; }
@@ -66,11 +68,12 @@ export function ProductCard({ product, isFavorite = false }: { product: ProductS
             <div className="whitespace-nowrap text-lg font-black text-primary">{product.price.toLocaleString("ar-EG")} ج.م</div>
             {product.oldPrice && product.oldPrice > product.price ? <div className="text-xs text-muted-foreground line-through">{product.oldPrice.toLocaleString("ar-EG")} ج.م</div> : null}
           </div>
-          <Button aria-label="إضافة إلى السلة" size="icon" disabled={!product.inStock || addToCart.isPending} onClick={() => addToCart.mutate({ data: { productId: product.id, quantity: 1 } })} className="h-10 w-10 shrink-0 rounded-xl bg-secondary text-white hover:bg-secondary/90">
+          <Button aria-label="إضافة إلى السلة" size="icon" disabled={!product.inStock || addToCart.isPending} onClick={() => notice.request("add_to_cart", () => addToCart.mutate({ data: { productId: product.id, quantity: 1 } }))} className="h-10 w-10 shrink-0 rounded-xl bg-secondary text-white hover:bg-secondary/90">
             <ShoppingCart className="h-4 w-4" />
           </Button>
         </div>
       </CardContent>
+      {notice.modal}
     </Card>
   );
 }

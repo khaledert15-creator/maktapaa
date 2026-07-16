@@ -24,6 +24,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { type ProductNotice, useProductNotice } from '@/components/storefront/ProductNoticeModal';
+import { useAuth } from '@/contexts/AuthContext';
 
 const statusLabels: Record<string, string> = {
   new: 'جديد', awaiting_confirmation: 'بانتظار التأكيد', confirmed: 'مؤكد', preparing: 'جاري التجهيز',
@@ -40,20 +42,25 @@ export function AdminProductForm() {
   const { data: product } = useAdminGetProduct(productId, {
     query: { queryKey: [`/api/admin/products/${productId}`], enabled: productId > 0 },
   });
-  const [form, setForm] = useState({ nameAr: '', nameEn: '', price: '', oldPrice: '', purchasePrice: '', sku: '', barcode: '', stockQuantity: '0', minStockLevel: '5', status: 'draft', descriptionShort: '', descriptionFull: '', author: '', schoolYear: '', bookType: '', edition: '', educationType: '', stageId: '', gradeId: '', subjectId: '', publisherId: '', categoryId: '', internalNotes: '', freeShipping: false, freeShippingBadgeText: 'شحن مجاني', isFeatured: false, isBestSeller: false, isNew: false, isOffer: false, isRevision: false, isBundle: false, seoTitle: '', seoDescription: '' });
+  const [form, setForm] = useState({ nameAr: '', nameEn: '', price: '', oldPrice: '', purchasePrice: '', sku: '', barcode: '', stockQuantity: '0', minStockLevel: '5', status: 'draft', descriptionShort: '', descriptionFull: '', author: '', schoolYear: '', bookType: '', edition: '', educationType: '', stageId: '', gradeId: '', subjectId: '', publisherId: '', categoryId: '', internalNotes: '', freeShipping: false, freeShippingBadgeText: 'شحن مجاني', isFeatured: false, isBestSeller: false, isNew: false, isOffer: false, isRevision: false, isBundle: false, seoTitle: '', seoDescription: '', customerNoticeEnabled: false, customerNoticeTitle: '', customerNoticeMessage: '', customerNoticeButtonText: 'موافق، متابعة الطلب', customerNoticeType: 'information', customerNoticeTrigger: 'product_open', customerNoticeStartAt: '', customerNoticeEndAt: '', customerNoticeDismissible: false });
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const { data: stages } = useListStages();
   const { data: grades } = useListGrades(form.stageId ? { stageId: Number(form.stageId) } : undefined);
   const { data: subjects } = useListSubjects();
   const { data: publishers } = useListPublishers();
   const { data: categories } = useListCategories();
+  const { admin } = useAuth();
+  const canManageNotices = admin?.role === 'owner' || admin?.role === 'administrator' || admin?.permissions?.includes('products.notices.manage');
+  const previewNotice = useProductNotice({ id: productId || -1, nameAr: form.nameAr, customerNoticeEnabled: true, customerNoticeTitle: form.customerNoticeTitle || 'معاينة رسالة العميل', customerNoticeMessage: form.customerNoticeMessage || 'اكتب الرسالة التي ستظهر للعميل.', customerNoticeButtonText: form.customerNoticeButtonText, customerNoticeType: form.customerNoticeType as ProductNotice['customerNoticeType'], customerNoticeTrigger: 'product_open', customerNoticeDismissible: form.customerNoticeDismissible });
 
   useEffect(() => {
     if (product) {
+      const noticeProduct = product as typeof product & ProductNotice;
       setForm({
       nameAr: product.nameAr, nameEn: product.nameEn || '', price: String(product.price), oldPrice: product.oldPrice ? String(product.oldPrice) : '', purchasePrice: product.purchasePrice ? String(product.purchasePrice) : '', sku: product.sku || '', barcode: product.barcode || '',
       stockQuantity: String(product.stockQuantity), minStockLevel: String(product.minStockLevel || 5),
       status: product.status, descriptionShort: product.descriptionShort || '', descriptionFull: product.descriptionFull || '', author: product.author || '', schoolYear: product.schoolYear || '', bookType: product.bookType || '', edition: product.edition || '', educationType: product.educationType || '', stageId: product.stageId ? String(product.stageId) : '', gradeId: product.gradeId ? String(product.gradeId) : '', subjectId: product.subjectId ? String(product.subjectId) : '', publisherId: product.publisherId ? String(product.publisherId) : '', categoryId: product.categoryId ? String(product.categoryId) : '', internalNotes: product.internalNotes || '', freeShipping: product.freeShipping || false, freeShippingBadgeText: product.freeShippingBadgeText || 'شحن مجاني', isFeatured: product.isFeatured || false, isBestSeller: product.isBestSeller || false, isNew: product.isNew || false, isOffer: product.isOffer || false, isRevision: product.isRevision || false, isBundle: product.isBundle || false, seoTitle: product.seoTitle || '', seoDescription: product.seoDescription || '',
+      customerNoticeEnabled: Boolean(noticeProduct.customerNoticeEnabled), customerNoticeTitle: noticeProduct.customerNoticeTitle || '', customerNoticeMessage: noticeProduct.customerNoticeMessage || '', customerNoticeButtonText: noticeProduct.customerNoticeButtonText || 'موافق، متابعة الطلب', customerNoticeType: noticeProduct.customerNoticeType || 'information', customerNoticeTrigger: noticeProduct.customerNoticeTrigger || 'product_open', customerNoticeStartAt: noticeProduct.customerNoticeStartAt ? new Date(noticeProduct.customerNoticeStartAt).toISOString().slice(0, 16) : '', customerNoticeEndAt: noticeProduct.customerNoticeEndAt ? new Date(noticeProduct.customerNoticeEndAt).toISOString().slice(0, 16) : '', customerNoticeDismissible: Boolean(noticeProduct.customerNoticeDismissible),
     }); }
   }, [product]);
 
@@ -96,6 +103,7 @@ export function AdminProductForm() {
       isOffer: form.isOffer, isRevision: form.isRevision, isBundle: form.isBundle,
       freeShipping: form.freeShipping, freeShippingBadgeText: form.freeShipping ? form.freeShippingBadgeText : undefined,
       seoTitle: form.seoTitle || undefined, seoDescription: form.seoDescription || undefined,
+      ...(canManageNotices ? { customerNoticeEnabled: form.customerNoticeEnabled, customerNoticeTitle: form.customerNoticeTitle || undefined, customerNoticeMessage: form.customerNoticeMessage || undefined, customerNoticeButtonText: form.customerNoticeButtonText || undefined, customerNoticeType: form.customerNoticeType, customerNoticeTrigger: form.customerNoticeTrigger, customerNoticeStartAt: form.customerNoticeStartAt ? new Date(form.customerNoticeStartAt).toISOString() : null, customerNoticeEndAt: form.customerNoticeEndAt ? new Date(form.customerNoticeEndAt).toISOString() : null, customerNoticeDismissible: form.customerNoticeDismissible } : {}),
     };
     if (productId) update.mutate({ id: productId, data: data as Parameters<typeof update.mutate>[0]['data'] });
     else create.mutate({ data: { ...data, stockQuantity: Number(form.stockQuantity) } as Parameters<typeof create.mutate>[0]['data'] });
@@ -141,7 +149,19 @@ export function AdminProductForm() {
       <label className="flex items-center gap-2"><input type="checkbox" checked={form.freeShipping} onChange={e => setForm(v => ({ ...v, freeShipping: e.target.checked }))}/>هذا المنتج يشمل شحنًا مجانيًا</label>
       <label className="space-y-2"><span>نص الشارة</span><Input disabled={!form.freeShipping} value={form.freeShippingBadgeText} onChange={e => setForm(v => ({ ...v, freeShippingBadgeText: e.target.value }))}/></label>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>6. SEO والملاحظات الداخلية</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+    {canManageNotices && <Card><CardHeader><CardTitle>6. رسالة تنبيه العميل</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <label className="flex items-center gap-2 md:col-span-2"><input type="checkbox" checked={form.customerNoticeEnabled} onChange={e => setForm(v => ({ ...v, customerNoticeEnabled: e.target.checked }))}/>تفعيل الرسالة لهذا المنتج</label>
+      <label className="space-y-2"><span>نوع الرسالة</span><Select value={form.customerNoticeType} onValueChange={customerNoticeType => setForm(v => ({ ...v, customerNoticeType }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="information">معلومة</SelectItem><SelectItem value="warning">تحذير</SelectItem><SelectItem value="preorder">حجز مسبق</SelectItem><SelectItem value="delayed_delivery">توصيل متأخر</SelectItem><SelectItem value="custom">مخصصة</SelectItem></SelectContent></Select></label>
+      <label className="space-y-2"><span>موعد الظهور</span><Select value={form.customerNoticeTrigger} onValueChange={customerNoticeTrigger => setForm(v => ({ ...v, customerNoticeTrigger }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="product_open">عند فتح صفحة المنتج</SelectItem><SelectItem value="add_to_cart">قبل الإضافة للسلة</SelectItem><SelectItem value="buy_now">قبل الشراء الآن</SelectItem><SelectItem value="checkout">عند إتمام الطلب</SelectItem><SelectItem value="first_interaction">أول تفاعل فقط</SelectItem></SelectContent></Select></label>
+      <label className="space-y-2 md:col-span-2"><span>العنوان</span><Input value={form.customerNoticeTitle} onChange={e => setForm(v => ({ ...v, customerNoticeTitle: e.target.value }))}/></label>
+      <label className="space-y-2 md:col-span-2"><span>الرسالة</span><Textarea rows={5} value={form.customerNoticeMessage} onChange={e => setForm(v => ({ ...v, customerNoticeMessage: e.target.value }))}/></label>
+      <label className="space-y-2"><span>نص زر التأكيد</span><Input value={form.customerNoticeButtonText} onChange={e => setForm(v => ({ ...v, customerNoticeButtonText: e.target.value }))}/></label>
+      <label className="flex items-center gap-2 self-end pb-3"><input type="checkbox" checked={form.customerNoticeDismissible} onChange={e => setForm(v => ({ ...v, customerNoticeDismissible: e.target.checked }))}/>السماح بالإغلاق دون متابعة</label>
+      <label className="space-y-2"><span>تاريخ البداية (اختياري)</span><Input type="datetime-local" value={form.customerNoticeStartAt} onChange={e => setForm(v => ({ ...v, customerNoticeStartAt: e.target.value }))}/></label>
+      <label className="space-y-2"><span>تاريخ النهاية (اختياري)</span><Input type="datetime-local" value={form.customerNoticeEndAt} onChange={e => setForm(v => ({ ...v, customerNoticeEndAt: e.target.value }))}/></label>
+      <Button type="button" variant="outline" onClick={() => previewNotice.request('product_open')} className="md:col-span-2">معاينة الرسالة</Button>
+    </CardContent>{previewNotice.modal}</Card>}
+    <Card><CardHeader><CardTitle>7. SEO والملاحظات الداخلية</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
       <label className="space-y-2"><span>عنوان SEO</span><Input value={form.seoTitle} onChange={e => setForm(v => ({ ...v, seoTitle: e.target.value }))}/></label>
       <label className="space-y-2"><span>وصف SEO</span><Input value={form.seoDescription} onChange={e => setForm(v => ({ ...v, seoDescription: e.target.value }))}/></label>
       <label className="space-y-2 md:col-span-2"><span>ملاحظات داخلية</span><Textarea value={form.internalNotes} onChange={e => setForm(v => ({ ...v, internalNotes: e.target.value }))}/></label>

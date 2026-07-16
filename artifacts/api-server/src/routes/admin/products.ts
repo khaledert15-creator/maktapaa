@@ -23,11 +23,20 @@ const productSchema = z.object({
   price: z.coerce.number().min(0), oldPrice: z.coerce.number().min(0).nullable().optional(), purchasePrice: z.coerce.number().min(0).nullable().optional(),
   sku: z.string().trim().max(100).nullable().optional(), barcode: z.string().trim().max(100).nullable().optional(),
   status: z.enum(["active", "draft", "archived"]).optional(), stockQuantity: z.coerce.number().int().min(0).optional(), minStockLevel: z.coerce.number().int().min(0).optional(),
-  stageId: optionalId, gradeId: optionalId, subjectId: optionalId, publisherId: optionalId, categoryId: optionalId,
+  stageId: optionalId, gradeId: optionalId, subjectId: optionalId, publisherId: optionalId, categoryId: optionalId, subcategoryId: optionalId,
   educationType: z.string().max(100).nullable().optional(), bookType: z.string().max(100).nullable().optional(), edition: z.string().max(100).nullable().optional(), schoolYear: z.string().max(30).nullable().optional(), author: z.string().max(300).nullable().optional(),
   isBestSeller: z.boolean().optional(), isFeatured: z.boolean().optional(), isNew: z.boolean().optional(), isRevision: z.boolean().optional(), isBundle: z.boolean().optional(), isOffer: z.boolean().optional(), freeShipping: z.boolean().optional(),
   freeShippingStartAt: z.coerce.date().nullable().optional(), freeShippingEndAt: z.coerce.date().nullable().optional(), freeShippingBadgeText: z.string().max(100).nullable().optional(),
   sortOrder: z.coerce.number().int().min(0).optional(), seoTitle: z.string().max(300).nullable().optional(), seoDescription: z.string().max(1000).nullable().optional(), internalNotes: z.string().max(5000).nullable().optional(),
+  customerNoticeEnabled: z.boolean().optional(), customerNoticeTitle: z.string().trim().max(300).nullable().optional(),
+  customerNoticeMessage: z.string().trim().max(5000).nullable().optional(), customerNoticeButtonText: z.string().trim().max(100).nullable().optional(),
+  customerNoticeType: z.enum(["information", "warning", "preorder", "delayed_delivery", "custom"]).nullable().optional(),
+  customerNoticeTrigger: z.enum(["product_open", "add_to_cart", "buy_now", "checkout", "first_interaction"]).nullable().optional(),
+  customerNoticeStartAt: z.coerce.date().nullable().optional(), customerNoticeEndAt: z.coerce.date().nullable().optional(),
+  customerNoticeDismissible: z.boolean().optional(),
+}).superRefine((value, ctx) => {
+  if (value.customerNoticeEnabled && (!value.customerNoticeTitle || !value.customerNoticeMessage || !value.customerNoticeTrigger)) ctx.addIssue({ code: "custom", path: ["customerNoticeMessage"], message: "عنوان ورسالة وتوقيت ظهور التنبيه مطلوبة عند التفعيل" });
+  if (value.customerNoticeStartAt && value.customerNoticeEndAt && value.customerNoticeEndAt < value.customerNoticeStartAt) ctx.addIssue({ code: "custom", path: ["customerNoticeEndAt"], message: "تاريخ نهاية التنبيه يجب ألا يسبق تاريخ البداية" });
 });
 const productUpdateSchema = productSchema.partial().omit({ stockQuantity: true });
 const stockSchema = z.object({ quantity: z.coerce.number().int().positive().max(1_000_000), movementType: z.enum(["purchase", "return", "damaged", "manual_increase", "manual_decrease", "adjustment"]), reason: z.string().trim().min(3).max(1000) });
@@ -44,7 +53,7 @@ function mapAdminProduct(p: typeof productsTable.$inferSelect) {
     sku: p.sku, barcode: p.barcode, status: p.status,
     stockQuantity: p.stockQuantity, reservedQuantity: p.reservedQuantity,
     minStockLevel: p.minStockLevel,
-    stageId: p.stageId, gradeId: p.gradeId, subjectId: p.subjectId, publisherId: p.publisherId, categoryId: p.categoryId,
+    stageId: p.stageId, gradeId: p.gradeId, subjectId: p.subjectId, publisherId: p.publisherId, categoryId: p.categoryId, subcategoryId: p.subcategoryId,
     educationType: p.educationType, bookType: p.bookType, edition: p.edition,
     schoolYear: p.schoolYear, author: p.author,
     isBestSeller: p.isBestSeller, isFeatured: p.isFeatured, isNew: p.isNew,
@@ -54,6 +63,11 @@ function mapAdminProduct(p: typeof productsTable.$inferSelect) {
     freeShippingBadgeText: p.freeShippingBadgeText,
     seoTitle: p.seoTitle, seoDescription: p.seoDescription,
     internalNotes: p.internalNotes,
+    customerNoticeEnabled: p.customerNoticeEnabled, customerNoticeTitle: p.customerNoticeTitle,
+    customerNoticeMessage: p.customerNoticeMessage, customerNoticeButtonText: p.customerNoticeButtonText,
+    customerNoticeType: p.customerNoticeType, customerNoticeTrigger: p.customerNoticeTrigger,
+    customerNoticeStartAt: p.customerNoticeStartAt, customerNoticeEndAt: p.customerNoticeEndAt,
+    customerNoticeDismissible: p.customerNoticeDismissible,
     createdAt: p.createdAt, updatedAt: p.updatedAt,
   };
 }
@@ -87,6 +101,7 @@ router.get("/admin/products", requireAdminPermission("products.view"), async (re
 
 router.post("/admin/products", requireAdminPermission("products.create"), async (req, res): Promise<void> => {
   const input = parseBody(productSchema, req.body, res); if (!input) return;
+  if (input.customerNoticeEnabled && !hasAdminPermission(req, "products.notices.manage")) { res.status(403).json({ error: "ليس لديك صلاحية إدارة رسائل تنبيه العملاء" }); return; }
   const { nameAr, nameEn, price, oldPrice, purchasePrice, sku, barcode, status, stockQuantity, ...rest } = input;
 
   const slug = slugify(nameAr) + "-" + Date.now();
@@ -116,6 +131,7 @@ router.get("/admin/products/:id", requireAdminPermission("products.view"), async
 router.patch("/admin/products/:id", requireAdminPermission("products.edit"), async (req, res): Promise<void> => {
   const input = parseBody(productUpdateSchema, req.body, res); if (!input) return;
   if ((input.price !== undefined || input.oldPrice !== undefined || input.purchasePrice !== undefined) && !hasAdminPermission(req, "prices.edit")) { res.status(403).json({ error: "ليس لديك صلاحية تعديل الأسعار" }); return; }
+  if (Object.keys(input).some(key => key.startsWith("customerNotice")) && !hasAdminPermission(req, "products.notices.manage")) { res.status(403).json({ error: "ليس لديك صلاحية إدارة رسائل تنبيه العملاء" }); return; }
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { price, oldPrice, purchasePrice, ...rest } = input;

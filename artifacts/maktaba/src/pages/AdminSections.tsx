@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { credentials: 'include', ...init, headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...init?.headers } });
@@ -35,6 +36,11 @@ function PageState({ loading, error, empty, children }: { loading: boolean; erro
   return <>{children}</>;
 }
 
+function usePermission(permission: string) {
+  const { admin } = useAuth();
+  return Boolean(admin && (admin.role === 'owner' || admin.role === 'administrator' || admin.permissions?.includes(permission)));
+}
+
 type Customer = { id: number; name: string; email?: string; mobile: string; isBlocked: boolean; totalOrders?: number; totalSpend?: number; internalNotes?: string };
 export function AdminCustomers() {
   const [q, setQ] = useState(''); const resource = useResource<{ items: Customer[] }>('/api/admin/customers?limit=100');
@@ -44,6 +50,7 @@ export function AdminCustomers() {
 
 type ProductRow = { id: number; nameAr: string; sku?: string; coverImage?: string; stockQuantity: number; reservedQuantity?: number; minStockLevel?: number };
 export function AdminInventory() {
+  const canAdjust = usePermission('inventory.adjust');
   const resource = useResource<{ items: ProductRow[] }>('/api/admin/products?limit=100'); const { toast } = useToast();
   const [adjustment, setAdjustment] = useState<{ product: ProductRow; direction: 'increase' | 'decrease' } | null>(null);
   const [quantity, setQuantity] = useState('1');
@@ -61,7 +68,7 @@ export function AdminInventory() {
     finally { setSaving(false); }
   };
   const rows = resource.data?.items || [];
-  return <section className="space-y-6"><h1 className="text-2xl font-bold">المخزون وحركاته</h1><PageState loading={resource.loading} error={resource.error} empty={!rows.length}><Card><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>SKU</TableHead><TableHead>الحالي</TableHead><TableHead>المحجوز</TableHead><TableHead>المتاح</TableHead><TableHead>الحالة</TableHead><TableHead>تعديل</TableHead></TableRow></TableHeader><TableBody>{rows.map(row => { const available = row.stockQuantity - (row.reservedQuantity || 0); return <TableRow key={row.id}><TableCell>{row.nameAr}</TableCell><TableCell>{row.sku || '-'}</TableCell><TableCell>{row.stockQuantity}</TableCell><TableCell>{row.reservedQuantity || 0}</TableCell><TableCell>{available}</TableCell><TableCell><Badge variant={available <= (row.minStockLevel || 0) ? 'destructive' : 'outline'}>{available === 0 ? 'نفد' : available <= (row.minStockLevel || 0) ? 'منخفض' : 'جيد'}</Badge></TableCell><TableCell className="space-x-2 space-x-reverse"><Button size="sm" onClick={() => openAdjustment(row, 'increase')}>زيادة</Button><Button size="sm" variant="outline" onClick={() => openAdjustment(row, 'decrease')}>نقص</Button></TableCell></TableRow>; })}</TableBody></Table></Card></PageState><Dialog open={Boolean(adjustment)} onOpenChange={open => { if (!open) setAdjustment(null); }}><DialogContent><DialogHeader><DialogTitle>{adjustment?.direction === 'increase' ? 'زيادة' : 'خفض'} مخزون {adjustment?.product.nameAr}</DialogTitle></DialogHeader><form onSubmit={saveAdjustment} className="space-y-4"><div><Label htmlFor="stock-quantity" className="mb-2 block">الكمية</Label><Input id="stock-quantity" type="number" min="1" max={adjustment?.direction === 'decrease' ? adjustment.product.stockQuantity : undefined} value={quantity} onChange={event => setQuantity(event.target.value)} /></div><div><Label htmlFor="stock-reason" className="mb-2 block">سبب الحركة</Label><Textarea id="stock-reason" value={reason} onChange={event => setReason(event.target.value)} placeholder="مثال: جرد مخزون فعلي" required /></div><Button type="submit" className="w-full" disabled={saving || Number(quantity) < 1 || reason.trim().length < 3}>{saving ? 'جاري التسجيل...' : 'تسجيل حركة المخزون'}</Button></form></DialogContent></Dialog></section>;
+  return <section className="space-y-6"><h1 className="text-2xl font-bold">المخزون وحركاته</h1><PageState loading={resource.loading} error={resource.error} empty={!rows.length}><Card><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>SKU</TableHead><TableHead>الحالي</TableHead><TableHead>المحجوز</TableHead><TableHead>المتاح</TableHead><TableHead>الحالة</TableHead><TableHead>{canAdjust ? 'تعديل' : 'الصلاحية'}</TableHead></TableRow></TableHeader><TableBody>{rows.map(row => { const available = row.stockQuantity - (row.reservedQuantity || 0); return <TableRow key={row.id}><TableCell>{row.nameAr}</TableCell><TableCell>{row.sku || '-'}</TableCell><TableCell>{row.stockQuantity}</TableCell><TableCell>{row.reservedQuantity || 0}</TableCell><TableCell>{available}</TableCell><TableCell><Badge variant={available <= (row.minStockLevel || 0) ? 'destructive' : 'outline'}>{available === 0 ? 'نفد' : available <= (row.minStockLevel || 0) ? 'منخفض' : 'جيد'}</Badge></TableCell><TableCell className="space-x-2 space-x-reverse">{canAdjust ? <><Button size="sm" onClick={() => openAdjustment(row, 'increase')}>زيادة</Button><Button size="sm" variant="outline" onClick={() => openAdjustment(row, 'decrease')}>نقص</Button></> : <span className="text-sm text-muted-foreground">عرض فقط</span>}</TableCell></TableRow>; })}</TableBody></Table></Card></PageState><Dialog open={canAdjust && Boolean(adjustment)} onOpenChange={open => { if (!open) setAdjustment(null); }}><DialogContent><DialogHeader><DialogTitle>{adjustment?.direction === 'increase' ? 'زيادة' : 'خفض'} مخزون {adjustment?.product.nameAr}</DialogTitle></DialogHeader><form onSubmit={saveAdjustment} className="space-y-4"><div><Label htmlFor="stock-quantity" className="mb-2 block">الكمية</Label><Input id="stock-quantity" type="number" min="1" max={adjustment?.direction === 'decrease' ? adjustment.product.stockQuantity : undefined} value={quantity} onChange={event => setQuantity(event.target.value)} /></div><div><Label htmlFor="stock-reason" className="mb-2 block">سبب الحركة</Label><Textarea id="stock-reason" value={reason} onChange={event => setReason(event.target.value)} placeholder="مثال: جرد مخزون فعلي" required /></div><Button type="submit" className="w-full" disabled={saving || Number(quantity) < 1 || reason.trim().length < 3}>{saving ? 'جاري التسجيل...' : 'تسجيل حركة المخزون'}</Button></form></DialogContent></Dialog></section>;
 }
 
 type Coupon = { id: number; code: string; type: string; value: number; usedCount: number; maxUses?: number; isActive: boolean; startDate?: string; endDate?: string };

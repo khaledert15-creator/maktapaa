@@ -17,7 +17,8 @@ router.get("/governorates", async (_req, res): Promise<void> => {
     id: g.id, nameAr: g.nameAr, nameEn: g.nameEn,
     shippingCost: Number(g.shippingCost),
     freeShippingThreshold: g.freeShippingThreshold ? Number(g.freeShippingThreshold) : null,
-    estimatedDays: g.estimatedDays, isActive: g.isActive,
+    estimatedDays: g.maxDeliveryDays, minDeliveryDays: g.minDeliveryDays, maxDeliveryDays: g.maxDeliveryDays,
+    estimatedDeliveryText: `من ${g.minDeliveryDays} إلى ${g.maxDeliveryDays} أيام عمل`, isActive: g.isActive,
   })));
 });
 
@@ -33,6 +34,7 @@ router.get("/governorates/:id/cities", async (req, res): Promise<void> => {
     nameAr: city.nameAr,
     surcharge: Number(city.surcharge),
     shippingPriceOverride: city.shippingPriceOverride ? Number(city.shippingPriceOverride) : null,
+    minDeliveryDays: city.minDeliveryDays, maxDeliveryDays: city.maxDeliveryDays,
   })));
 });
 
@@ -94,8 +96,10 @@ router.post("/shipping/quote", async (req, res): Promise<void> => {
     city: cityName || null,
     cityId: city?.id ?? null,
     subtotal,
-    estimatedDays: governorate.estimatedDays,
-    estimatedDeliveryText: governorate.estimatedDeliveryText,
+    estimatedDays: city?.maxDeliveryDays ?? governorate.maxDeliveryDays,
+    minDeliveryDays: city?.minDeliveryDays ?? governorate.minDeliveryDays,
+    maxDeliveryDays: city?.maxDeliveryDays ?? governorate.maxDeliveryDays,
+    estimatedDeliveryText: `من ${city?.minDeliveryDays ?? governorate.minDeliveryDays} إلى ${city?.maxDeliveryDays ?? governorate.maxDeliveryDays} أيام عمل`,
     snapshot: {
       rule: calculation.rule,
       governorateId,
@@ -106,6 +110,8 @@ router.post("/shipping/quote", async (req, res): Promise<void> => {
       surcharge: calculation.surcharge,
       discount: calculation.discount,
       finalCost: calculation.finalCost,
+      minDeliveryDays: city?.minDeliveryDays ?? governorate.minDeliveryDays,
+      maxDeliveryDays: city?.maxDeliveryDays ?? governorate.maxDeliveryDays,
       calculatedAt: new Date().toISOString(),
     },
   });

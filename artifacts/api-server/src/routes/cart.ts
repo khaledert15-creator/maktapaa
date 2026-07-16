@@ -57,6 +57,15 @@ async function buildCartResponse(cart: CartSession) {
       stockQuantity: p.stockQuantity,
       freeShipping: p.freeShipping,
       freeShippingBadgeText: p.freeShippingBadgeText,
+      customerNoticeEnabled: p.customerNoticeEnabled,
+      customerNoticeTitle: p.customerNoticeTitle,
+      customerNoticeMessage: p.customerNoticeMessage,
+      customerNoticeButtonText: p.customerNoticeButtonText,
+      customerNoticeType: p.customerNoticeType,
+      customerNoticeTrigger: p.customerNoticeTrigger,
+      customerNoticeStartAt: p.customerNoticeStartAt,
+      customerNoticeEndAt: p.customerNoticeEndAt,
+      customerNoticeDismissible: p.customerNoticeDismissible,
     };
   }).filter(Boolean);
 

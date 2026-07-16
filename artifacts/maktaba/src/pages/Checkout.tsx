@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Seo } from "@/components/storefront/Seo";
+import { type ProductNotice, useProductNotice } from "@/components/storefront/ProductNoticeModal";
 
 const schema = z.object({
   customerName: z.string().trim().min(2, "اكتب الاسم الكامل"), mobile: z.string().regex(/^01[0125][0-9]{8}$/, "رقم موبايل مصري غير صحيح"), altMobile: z.string().regex(/^01[0125][0-9]{8}$/, "رقم موبايل مصري غير صحيح").optional().or(z.literal("")),
@@ -37,6 +38,8 @@ export default function Checkout() {
   const city = form.watch("city");
   const { data: cities } = useListGovernorateCities(governorateId || 0, { query: { queryKey: getListGovernorateCitiesQueryKey(governorateId || 0), enabled: Boolean(governorateId) } });
   const quote = useGetShippingQuote();
+  const noticeProduct = (cart?.items as unknown as ProductNotice[] | undefined)?.find(item => item.customerNoticeTrigger === "checkout" || item.customerNoticeTrigger === "first_interaction");
+  const checkoutNotice = useProductNotice(noticeProduct);
 
   useEffect(() => { if (customer) { form.setValue("customerName", customer.name); form.setValue("mobile", customer.mobile); } }, [customer, form]);
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function Checkout() {
   }, [governorateId, city, cart?.items.length, cart?.couponCode]);
 
   const createOrder = useCreateOrder({ mutation: { onSuccess: order => { queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetMyOrdersQueryKey() }); setLocation(`/order-confirmation/${order.orderNumber}`); }, onError: () => toast({ title: "لم يتم إنشاء الطلب", description: "راجع المخزون وبيانات التوصيل ثم حاول مرة أخرى. لن يتم تكرار الطلب عند إعادة المحاولة.", variant: "destructive" }) } });
-  const submit = (values: CheckoutValues) => { if (!cart?.items.length || !quote.data) { toast({ title: "انتظر اكتمال حساب الشحن", variant: "destructive" }); return; } createOrder.mutate({ data: { ...values, altMobile: values.altMobile || null, checkoutToken: checkoutToken.current, couponCode: cart.couponCode || null } }); };
+  const submit = (values: CheckoutValues) => { if (!cart?.items.length || !quote.data) { toast({ title: "انتظر اكتمال حساب الشحن", variant: "destructive" }); return; } checkoutNotice.request("checkout", () => createOrder.mutate({ data: { ...values, altMobile: values.altMobile || null, checkoutToken: checkoutToken.current, couponCode: cart.couponCode || null } })); };
   const applyAddress = (id: number) => { const address = addresses?.find(item => item.id === id); if (!address) return; if (address.governorateId) form.setValue("governorateId", address.governorateId); form.setValue("city", address.city); form.setValue("detailedAddress", address.detailedAddress); form.setValue("landmark", address.landmark || ""); };
 
   if (isLoading) return <div className="container mx-auto grid gap-8 px-4 py-10 lg:grid-cols-3"><Skeleton className="h-[650px] rounded-3xl lg:col-span-2" /><Skeleton className="h-[500px] rounded-3xl" /></div>;
@@ -74,6 +77,7 @@ export default function Checkout() {
       </div>
       <aside><Card className="sticky top-40 overflow-hidden rounded-2xl shadow-lg"><CardHeader className="border-b"><CardTitle>ملخص الطلب</CardTitle></CardHeader><CardContent className="p-0"><div className="max-h-72 space-y-4 overflow-y-auto p-5">{cart.items.map(item => <div key={item.productId} className="flex gap-3"><div className="h-16 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">{item.coverImage ? <img src={item.coverImage} alt={item.nameAr} className="h-full w-full object-cover" /> : <BookOpen className="h-full w-full p-3 text-muted-foreground/30" />}</div><div className="min-w-0 flex-1"><strong className="line-clamp-2 text-sm">{item.nameAr}</strong><span className="text-xs text-muted-foreground">{item.quantity} × {item.unitPrice} ج.م</span></div><strong className="text-sm">{item.subtotal} ج.م</strong></div>)}</div><div className="space-y-3 border-t bg-slate-50 p-5 text-sm"><Summary label="المنتجات" value={`${cart.subtotal} ج.م`} />{Boolean(cart.couponDiscount) && <Summary label={`الكوبون ${cart.couponCode || ""}`} value={`-${cart.couponDiscount} ج.م`} green />}<Summary label="أساس الشحن" value={quote.data ? `${quote.data.baseCost} ج.م` : "—"} /><Summary label="إضافة المنطقة" value={quote.data ? `${quote.data.surcharge} ج.م` : "—"} />{quote.data && quote.data.discount > 0 && <Summary label="خصم الشحن" value={`-${quote.data.discount} ج.م`} green />}<Summary label="الشحن النهائي" value={quote.data ? (quote.data.finalCost === 0 ? "مجانًا" : `${quote.data.finalCost} ج.م`) : governorateId ? "جاري الحساب..." : "اختر المحافظة"} />{quote.data?.freeShippingReason && <p className="rounded-lg bg-emerald-50 p-2 text-xs font-bold text-emerald-700">{quote.data.freeShippingReason}</p>}{quote.data && <p className="flex gap-2 text-xs text-muted-foreground"><Truck className="h-4 w-4" /> {quote.data.estimatedDeliveryText || `${quote.data.estimatedDays} أيام عمل تقريبًا`}</p>}<div className="flex items-end justify-between border-t pt-4"><strong className="text-lg">الإجمالي</strong><span className="text-3xl font-black text-primary">{finalTotal.toLocaleString("ar-EG")} ج.م</span></div></div><div className="p-5"><Button type="submit" disabled={createOrder.isPending || quote.isPending || !quote.data} className="h-14 w-full rounded-xl text-lg">{createOrder.isPending ? "جاري تسجيل الطلب..." : "تأكيد الطلب"}</Button><p className="mt-3 flex items-center justify-center gap-1 text-center text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4" /> الطلب محمي من التكرار عند الضغط أكثر من مرة</p></div></CardContent></Card></aside>
     </form></Form>
+    {checkoutNotice.modal}
   </div></div>;
 }
 
