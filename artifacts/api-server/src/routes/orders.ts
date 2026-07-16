@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, couponsTable, customersTable, stockMovementsTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { calculateShipping } from "../services/shipping";
 
 const router: IRouter = Router();
@@ -84,6 +84,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   let freeShippingCoupon = false;
+  let appliedCouponId: number | null = null;
 
   let couponDiscount = 0;
   if (couponCode) {
@@ -92,7 +93,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       if (coupon.type === "percentage") couponDiscount = subtotal * (Number(coupon.value) / 100);
       else if (coupon.type === "fixed") couponDiscount = Math.min(Number(coupon.value), subtotal);
       else if (coupon.type === "free_shipping") freeShippingCoupon = true;
-      await db.update(couponsTable).set({ usedCount: sql`${couponsTable.usedCount} + 1` }).where(eq(couponsTable.id, coupon.id));
+      appliedCouponId = coupon.id;
     }
   }
 
@@ -114,44 +115,54 @@ router.post("/orders", async (req, res): Promise<void> => {
   
   const customerId = req.session.customerId ? (req.session.customerId as number) : null;
 
-  const [order] = await db.insert(ordersTable).values({
-    orderNumber, customerId, customerName, mobile, altMobile: altMobile || null,
-    governorateId: gov.id, governorateName: gov.nameAr,
-    city, detailedAddress, landmark: landmark || null,
-    deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
-    paymentMethod: "cash_on_delivery",
-    paymentStatus: "cash_on_delivery",
-    subtotal: String(subtotal), discount: "0", couponDiscount: String(couponDiscount),
-    couponCode: couponCode || null, shippingCost: String(shippingCost),
-    shippingBaseCost: String(shipping.baseCost), shippingSurcharge: String(shipping.surcharge),
-    shippingDiscount: String(shipping.discount), freeShippingReason: shipping.freeShippingReason,
-    shippingRuleSnapshot: { rule: shipping.rule, governorateId: gov.id, governorateName: gov.nameAr, city, cityId: matchedCity?.id ?? null, calculatedAt: new Date().toISOString() },
-    total: String(total), status: "new",
-  }).returning();
+  let order: typeof ordersTable.$inferSelect;
+  try {
+    order = await db.transaction(async (tx) => {
+      if (appliedCouponId) {
+        await tx.update(couponsTable).set({ usedCount: sql`${couponsTable.usedCount} + 1` }).where(eq(couponsTable.id, appliedCouponId));
+      }
+      const [createdOrder] = await tx.insert(ordersTable).values({
+        orderNumber, customerId, customerName, mobile, altMobile: altMobile || null,
+        governorateId: gov.id, governorateName: gov.nameAr,
+        city, detailedAddress, landmark: landmark || null,
+        deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
+        paymentMethod: "cash_on_delivery", paymentStatus: "cash_on_delivery",
+        subtotal: String(subtotal), discount: "0", couponDiscount: String(couponDiscount),
+        couponCode: couponCode || null, shippingCost: String(shippingCost),
+        shippingBaseCost: String(shipping.baseCost), shippingSurcharge: String(shipping.surcharge),
+        shippingDiscount: String(shipping.discount), freeShippingReason: shipping.freeShippingReason,
+        shippingRuleSnapshot: { rule: shipping.rule, governorateId: gov.id, governorateName: gov.nameAr, city, cityId: matchedCity?.id ?? null, baseCost: shipping.baseCost, surcharge: shipping.surcharge, discount: shipping.discount, finalCost: shipping.finalCost, calculatedAt: new Date().toISOString() },
+        total: String(total), status: "new",
+      }).returning();
 
-  // Insert order items and update stock
-  for (const { product, quantity } of resolvedItems) {
-    await db.insert(orderItemsTable).values({
-      orderId: order.id, productId: product.id, nameAr: product.nameAr,
-      coverImage: product.coverImage, quantity, unitPrice: String(product.price),
-      discount: "0", subtotal: String(Number(product.price) * quantity),
+      for (const { product, quantity } of resolvedItems) {
+        const [updatedStock] = await tx.update(productsTable).set({
+          stockQuantity: sql`${productsTable.stockQuantity} - ${quantity}`,
+          salesCount: sql`${productsTable.salesCount} + ${quantity}`,
+        }).where(and(eq(productsTable.id, product.id), gte(productsTable.stockQuantity, quantity))).returning({ stockQuantity: productsTable.stockQuantity });
+        if (!updatedStock) throw new Error(`OUT_OF_STOCK:${product.nameAr}`);
+        await tx.insert(orderItemsTable).values({
+          orderId: createdOrder.id, productId: product.id, nameAr: product.nameAr,
+          coverImage: product.coverImage, quantity, unitPrice: product.price,
+          discount: "0", subtotal: String(Number(product.price) * quantity),
+        });
+        await tx.insert(stockMovementsTable).values({
+          productId: product.id, movementType: "sale",
+          quantityBefore: updatedStock.stockQuantity + quantity,
+          quantityAfter: updatedStock.stockQuantity, quantityChanged: -quantity,
+          reason: `حجز للطلب ${createdOrder.orderNumber}`, orderId: createdOrder.id,
+        });
+      }
+      await tx.insert(orderStatusHistoryTable).values({ orderId: createdOrder.id, status: "new", notes: "تم إنشاء الطلب" });
+      return createdOrder;
     });
-    await db.update(productsTable).set({
-      stockQuantity: product.stockQuantity - quantity,
-      salesCount: sql`${productsTable.salesCount} + ${quantity}`,
-    }).where(eq(productsTable.id, product.id));
-    await db.insert(stockMovementsTable).values({
-      productId: product.id,
-      movementType: "sale",
-      quantityBefore: product.stockQuantity,
-      quantityAfter: product.stockQuantity - quantity,
-      quantityChanged: -quantity,
-      reason: `حجز للطلب ${order.orderNumber}`,
-      orderId: order.id,
-    });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("OUT_OF_STOCK:")) {
+      res.status(409).json({ error: `الكمية المطلوبة لم تعد متاحة للمنتج: ${error.message.slice(13)}` });
+      return;
+    }
+    throw error;
   }
-
-  await db.insert(orderStatusHistoryTable).values({ orderId: order.id, status: "new", notes: "تم إنشاء الطلب" });
 
   // Clear cart
   delete (req.session).cart;

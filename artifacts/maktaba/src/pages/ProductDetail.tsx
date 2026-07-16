@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
-import { useGetProduct, useGetRelatedProducts, useAddToCart } from "@workspace/api-client-react";
+import { useGetProduct, useAddToCart } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShoppingCart, Heart, Share2, BookOpen, Truck, ShieldCheck, Plus, Minus } from "lucide-react";
+import { ShoppingCart, Heart, Share2, BookOpen, Truck, Plus, Minus } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,11 +13,6 @@ import { getGetCartQueryKey } from "@workspace/api-client-react";
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
   const { data: product, isLoading, isError } = useGetProduct(slug);
-  const relatedProductId = product?.id || 0;
-  const { data: relatedProducts } = useGetRelatedProducts(relatedProductId, {
-    query: { queryKey: [`/api/products/${relatedProductId}/related`], enabled: !!product?.id }
-  });
-  
   const [quantity, setQuantity] = useState(1);
   const { toast } = useToast();
   const queryClient = useQueryClient();

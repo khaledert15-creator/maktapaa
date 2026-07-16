@@ -7,7 +7,7 @@ const router: IRouter = Router();
 router.use(requireAdminAuth);
 
 router.get("/admin/reports/sales", async (req, res): Promise<void> => {
-  const { dateFrom, dateTo, groupBy = "day" } = req.query as Record<string, string>;
+  const { dateFrom, dateTo } = req.query as Record<string, string>;
   if (!dateFrom || !dateTo) { res.status(400).json({ error: "dateFrom and dateTo required" }); return; }
 
   const from = new Date(dateFrom);

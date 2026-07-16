@@ -1,16 +1,15 @@
-import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { useGetMyOrders, useListFavorites, useLogoutCustomer } from "@workspace/api-client-react";
+import { useGetMyOrders, useLogoutCustomer } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Package, Heart, User, MapPin, LogOut, BookOpen, Clock } from "lucide-react";
+import { Package, Heart, User, MapPin, LogOut, BookOpen } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Account() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
   const defaultTab = searchParams.get('tab') || 'orders';
   
@@ -28,10 +27,6 @@ export default function Account() {
     { page: 1, limit: 10 },
     { query: { queryKey: ['/api/orders/my', { page: 1, limit: 10 }], enabled: !!customer } }
   );
-
-  const { data: favoritesData, isLoading: isLoadingFavs } = useListFavorites({
-    query: { queryKey: ['/api/customers/me/favorites'], enabled: !!customer && defaultTab === 'favorites' }
-  });
 
   // Auth Guard
   if (isCustomerAuthLoaded && !customer) {

@@ -35,12 +35,16 @@ router.patch("/admin/shipping/governorates/:id", requireAdminPermission("shippin
 router.patch("/admin/shipping/governorates", requireAdminPermission("shipping.edit"), async (req, res): Promise<void> => {
   const updates = Array.isArray(req.body) ? req.body : [];
   if (!updates.length || updates.length > 27) { res.status(400).json({ error: "قائمة التحديث غير صحيحة" }); return; }
-  const results = [];
-  for (const update of updates) {
-    const id = Number(update.id);
-    const [row] = await db.update(governoratesTable).set({ shippingCost: String(Math.max(0, Number(update.shippingCost))), ...(update.freeShippingThreshold !== undefined && { freeShippingThreshold: update.freeShippingThreshold === null || update.freeShippingThreshold === "" ? null : String(Math.max(0, Number(update.freeShippingThreshold))) }), ...(update.isActive !== undefined && { isActive: Boolean(update.isActive) }), updatedBy: req.session.adminId }).where(eq(governoratesTable.id, id)).returning();
-    if (row) results.push(row);
-  }
+  const results = await db.transaction(async (tx) => {
+    const rows = [];
+    for (const update of updates) {
+      const id = Number(update.id);
+      const [row] = await tx.update(governoratesTable).set({ shippingCost: String(Math.max(0, Number(update.shippingCost))), ...(update.freeShippingThreshold !== undefined && { freeShippingThreshold: update.freeShippingThreshold === null || update.freeShippingThreshold === "" ? null : String(Math.max(0, Number(update.freeShippingThreshold))) }), ...(update.isActive !== undefined && { isActive: Boolean(update.isActive) }), updatedBy: req.session.adminId }).where(eq(governoratesTable.id, id)).returning();
+      if (!row) throw new Error(`Governorate ${id} not found`);
+      rows.push(row);
+    }
+    return rows;
+  });
   await writeAuditLog(req, { action: "shipping.bulk_update", entityType: "governorate", description: `تحديث أسعار شحن ${results.length} محافظة` });
   res.json(results);
 });

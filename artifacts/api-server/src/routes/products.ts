@@ -227,7 +227,7 @@ async function enrichProducts(items: typeof productsTable.$inferSelect[]) {
     publisherIds.length ? db.select().from(publishersTable).where(inArray(publishersTable.id, publisherIds)) : [],
   ]);
 
-  const stageMap = Object.fromEntries(stages.map(s => [s.id, s.nameAr]));
+  const stageMap: Record<number, string> = Object.fromEntries(stages.map(stage => [stage.id, stage.nameAr]));
   const gradeMap = Object.fromEntries(grades.map(g => [g.id, g.nameAr]));
   const subjectMap = Object.fromEntries(subjects.map(s => [s.id, s.nameAr]));
   const publisherMap = Object.fromEntries(publishers.map(p => [p.id, p.nameAr]));
@@ -243,6 +243,7 @@ async function enrichProducts(items: typeof productsTable.$inferSelect[]) {
       discountPercent, inStock: p.stockQuantity > 0,
       isBestSeller: p.isBestSeller, isNew: p.isNew, isFeatured: p.isFeatured,
       freeShipping: p.freeShipping, freeShippingBadgeText: p.freeShippingBadgeText,
+      stage: p.stageId ? stageMap[p.stageId] || null : null,
       publisher: p.publisherId ? publisherMap[p.publisherId] || null : null,
       grade: p.gradeId ? gradeMap[p.gradeId] || null : null,
       subject: p.subjectId ? subjectMap[p.subjectId] || null : null,

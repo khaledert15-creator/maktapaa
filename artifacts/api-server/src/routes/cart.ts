@@ -31,12 +31,6 @@ async function buildCartResponse(cart: CartSession) {
   }
 
   const productIds = cart.items.map(i => i.productId);
-  const products = await db.select().from(productsTable).where(
-    productIds.length === 1
-      ? eq(productsTable.id, productIds[0])
-      : eq(productsTable.id, productIds[0]) // fallback - fetch individually below
-  );
-
   const productMap: Record<number, typeof productsTable.$inferSelect> = {};
   for (const pid of productIds) {
     const [p] = await db.select().from(productsTable).where(eq(productsTable.id, pid));

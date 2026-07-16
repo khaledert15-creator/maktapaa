@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useAdminListProducts, useAdminDeleteProduct } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,6 @@ import { Plus, Search, MoreHorizontal, Pencil, Trash2, Eye, Filter } from "lucid
 import useDebounce from "@/hooks/use-debounce";
 
 export default function AdminProducts() {
-  const [, setLocation] = useLocation();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);

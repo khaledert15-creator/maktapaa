@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { useListFeaturedProducts, useListCategories, useListStages, useListPublishers, useGetSiteSettings, useListBanners } from "@workspace/api-client-react";
+import { useListFeaturedProducts, useListStages, useListPublishers } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,7 +10,6 @@ export default function Home() {
   const { data: featuredProducts, isLoading: isLoadingFeatured } = useListFeaturedProducts();
   const { data: stages, isLoading: isLoadingStages } = useListStages();
   const { data: publishers, isLoading: isLoadingPublishers } = useListPublishers();
-  const { data: banners, isLoading: isLoadingBanners } = useListBanners();
 
   return (
     <div className="flex flex-col gap-12 pb-12">

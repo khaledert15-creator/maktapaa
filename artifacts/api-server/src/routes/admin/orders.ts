@@ -109,15 +109,13 @@ router.patch("/admin/orders/:id/status", requireAdminPermission("orders.edit"), 
   const { status, notes, trackingNumber, shippingCompany } = req.body;
   
 
-  const [order] = await db.update(ordersTable).set({
-    status, ...(trackingNumber && { trackingNumber }), ...(shippingCompany && { shippingCompany }),
-  }).where(eq(ordersTable.id, id)).returning();
-
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-
-  await db.insert(orderStatusHistoryTable).values({
-    orderId: id, status, notes: notes || null, employeeId: req.session.adminId as number || null,
+  const order = await db.transaction(async (tx) => {
+    const [updatedOrder] = await tx.update(ordersTable).set({ status, ...(trackingNumber && { trackingNumber }), ...(shippingCompany && { shippingCompany }) }).where(eq(ordersTable.id, id)).returning();
+    if (!updatedOrder) return null;
+    await tx.insert(orderStatusHistoryTable).values({ orderId: id, status, notes: notes || null, employeeId: req.session.adminId as number || null });
+    return updatedOrder;
   });
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   await writeAuditLog(req, { action: "order.status_update", entityType: "order", entityId: id, description: `تغيير حالة الطلب ${order.orderNumber} إلى ${status}`, afterData: { status, notes, trackingNumber, shippingCompany } });
 
   const [items, history] = await Promise.all([
@@ -149,38 +147,21 @@ router.patch("/admin/orders/:id/cancellation", requireAdminPermission("orders.ed
   }
   
 
-  await db.update(cancellationRequestsTable).set({
-    status: decision, employeeNotes: notes || null,
-    employeeId: req.session.adminId as number || null, decidedAt: new Date(),
-  }).where(eq(cancellationRequestsTable.id, pendingRequest.id));
-
-  if (decision === "approved") {
-    await db.update(ordersTable).set({ status: "cancelled" }).where(eq(ordersTable.id, id));
-    await db.insert(orderStatusHistoryTable).values({
-      orderId: id, status: "cancelled", notes: notes || "تمت الموافقة على طلب الإلغاء",
-      employeeId: req.session.adminId as number || null,
-    });
-    // Restore stock
-    const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id));
+  await db.transaction(async (tx) => {
+    await tx.update(cancellationRequestsTable).set({ status: decision, employeeNotes: notes || null, employeeId: req.session.adminId as number || null, decidedAt: new Date() }).where(eq(cancellationRequestsTable.id, pendingRequest.id));
+    if (decision !== "approved") return;
+    await tx.update(ordersTable).set({ status: "cancelled" }).where(eq(ordersTable.id, id));
+    await tx.insert(orderStatusHistoryTable).values({ orderId: id, status: "cancelled", notes: notes || "تمت الموافقة على طلب الإلغاء", employeeId: req.session.adminId as number || null });
+    const items = await tx.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id));
     for (const item of items) {
-      if (item.productId) {
-        const [product] = await db.select().from(productsTable).where(eq(productsTable.id, item.productId));
-        if (!product) continue;
-        const quantityAfter = product.stockQuantity + item.quantity;
-        await db.update(productsTable).set({ stockQuantity: sql`${productsTable.stockQuantity} + ${item.quantity}` }).where(eq(productsTable.id, item.productId));
-        await db.insert(stockMovementsTable).values({
-          productId: item.productId,
-          movementType: "reservation_release",
-          quantityBefore: product.stockQuantity,
-          quantityAfter,
-          quantityChanged: item.quantity,
-          reason: `استعادة مخزون الطلب الملغي رقم ${id}`,
-          orderId: id,
-          employeeId: req.session.adminId || null,
-        });
-      }
+      if (!item.productId) continue;
+      const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, item.productId)).for("update");
+      if (!product) continue;
+      const quantityAfter = product.stockQuantity + item.quantity;
+      await tx.update(productsTable).set({ stockQuantity: quantityAfter }).where(eq(productsTable.id, item.productId));
+      await tx.insert(stockMovementsTable).values({ productId: item.productId, movementType: "reservation_release", quantityBefore: product.stockQuantity, quantityAfter, quantityChanged: item.quantity, reason: `استعادة مخزون الطلب الملغي رقم ${id}`, orderId: id, employeeId: req.session.adminId || null });
     }
-  }
+  });
 
   await writeAuditLog(req, { action: `order.cancellation_${decision}`, entityType: "order", entityId: id, description: decision === "approved" ? "الموافقة على طلب إلغاء" : "رفض طلب إلغاء", afterData: { decision, notes } });
 

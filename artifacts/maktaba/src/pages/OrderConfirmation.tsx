@@ -1,8 +1,7 @@
 import { Link, useParams } from "wouter";
-import { CheckCircle2, Package, MapPin, Truck, ArrowRight } from "lucide-react";
+import { CheckCircle2, Package, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useGetMyOrders } from "@workspace/api-client-react";
 
 export default function OrderConfirmation() {
   const { orderNumber } = useParams<{ orderNumber: string }>();

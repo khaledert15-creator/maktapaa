@@ -102,7 +102,7 @@ export function AppRouter() {
         )}
       </Route>
       <Route path="/product/:slug">
-        {(params) => (
+        {() => (
           <CustomerLayout>
             <ProductDetail />
           </CustomerLayout>

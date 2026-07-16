@@ -7,7 +7,6 @@ import {
   Users, 
   Tags, 
   Truck, 
-  Settings, 
   LogOut,
   Menu,
   X,

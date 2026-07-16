@@ -2,6 +2,8 @@ import {
   db,
   stagesTable, gradesTable, subjectsTable, publishersTable, governoratesTable,
   productsTable, usersTable, siteSettingsTable, bannersTable, faqsTable, categoriesTable,
+  productImagesTable, citiesTable, customersTable, ordersTable, orderItemsTable,
+  orderStatusHistoryTable, stockMovementsTable, couponsTable, auditLogsTable,
 } from "@workspace/db";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
@@ -16,7 +18,8 @@ async function seed() {
     { nameAr: "ثانوي", nameEn: "Secondary", sortOrder: 3 },
     { nameAr: "أزهر", nameEn: "Al-Azhar", sortOrder: 4 },
   ];
-  const stages = await db.insert(stagesTable).values(stagesData).onConflictDoNothing().returning();
+  const existingStages = await db.select().from(stagesTable);
+  const stages = existingStages.length ? existingStages : await db.insert(stagesTable).values(stagesData).returning();
   console.log(`✅ ${stages.length} stages`);
 
   // Grades
@@ -37,7 +40,8 @@ async function seed() {
     { nameAr: "الثاني الثانوي", stageId: stages[2]?.id || 3, sortOrder: 2 },
     { nameAr: "الثالث الثانوي", stageId: stages[2]?.id || 3, sortOrder: 3 },
   ];
-  const grades = await db.insert(gradesTable).values(gradesData).onConflictDoNothing().returning();
+  const existingGrades = await db.select().from(gradesTable);
+  const grades = existingGrades.length ? existingGrades : await db.insert(gradesTable).values(gradesData).returning();
   console.log(`✅ ${grades.length} grades`);
 
   // Subjects
@@ -55,7 +59,8 @@ async function seed() {
     { nameAr: "الجغرافيا", nameEn: "Geography" },
     { nameAr: "الفرنسية", nameEn: "French" },
   ];
-  const subjects = await db.insert(subjectsTable).values(subjectsData).onConflictDoNothing().returning();
+  const existingSubjects = await db.select().from(subjectsTable);
+  const subjects = existingSubjects.length ? existingSubjects : await db.insert(subjectsTable).values(subjectsData).returning();
   console.log(`✅ ${subjects.length} subjects`);
 
   // Publishers
@@ -69,7 +74,8 @@ async function seed() {
     { nameAr: "مكتبة مصر", nameEn: "Maktabet Misr" },
     { nameAr: "دار القلم", nameEn: "Dar Al-Qalam" },
   ];
-  const publishers = await db.insert(publishersTable).values(publishersData).onConflictDoNothing().returning();
+  const existingPublishers = await db.select().from(publishersTable);
+  const publishers = existingPublishers.length ? existingPublishers : await db.insert(publishersTable).values(publishersData).returning();
   console.log(`✅ ${publishers.length} publishers`);
 
   // Governorates
@@ -102,7 +108,8 @@ async function seed() {
     { nameAr: "مطروح", nameEn: "Matrouh", shippingCost: "80", estimatedDays: 6 },
     { nameAr: "الوادي الجديد", nameEn: "New Valley", shippingCost: "85", estimatedDays: 7 },
   ];
-  const govs = await db.insert(governoratesTable).values(governoratesData).onConflictDoNothing().returning();
+  const existingGovernorates = await db.select().from(governoratesTable);
+  const govs = existingGovernorates.length ? existingGovernorates : await db.insert(governoratesTable).values(governoratesData).returning();
   console.log(`✅ ${govs.length} governorates`);
 
   // Default admin user
@@ -261,6 +268,85 @@ async function seed() {
     console.log(`✅ Products already exist (${productsCount.length}), skipping`);
   }
 
+  // Realistic relational fixtures used by the PostgreSQL integration suite.
+  await db.transaction(async (tx) => {
+    const allProducts = await tx.select().from(productsTable);
+    const allGovernorates = await tx.select().from(governoratesTable);
+    const cairo = allGovernorates.find(g => g.nameEn === "Cairo") ?? allGovernorates[0];
+    const giza = allGovernorates.find(g => g.nameEn === "Giza") ?? allGovernorates[1];
+
+    if (cairo) {
+      const existingCities = await tx.select().from(citiesTable).where(eq(citiesTable.governorateId, cairo.id));
+      if (existingCities.length === 0) {
+        await tx.insert(citiesTable).values([
+          { governorateId: cairo.id, nameAr: "مدينة نصر", nameEn: "Nasr City", surcharge: "0" },
+          { governorateId: cairo.id, nameAr: "القاهرة الجديدة", nameEn: "New Cairo", surcharge: "15" },
+        ]);
+      }
+    }
+    if (giza) {
+      const existingCities = await tx.select().from(citiesTable).where(eq(citiesTable.governorateId, giza.id));
+      if (existingCities.length === 0) {
+        await tx.insert(citiesTable).values([
+          { governorateId: giza.id, nameAr: "الدقي", nameEn: "Dokki", surcharge: "0" },
+          { governorateId: giza.id, nameAr: "أكتوبر", nameEn: "6th of October", shippingPriceOverride: "55", surcharge: "10" },
+        ]);
+      }
+    }
+
+    for (const product of allProducts.slice(0, 3)) {
+      const existingImages = await tx.select().from(productImagesTable).where(eq(productImagesTable.productId, product.id));
+      if (existingImages.length === 0) {
+        await tx.insert(productImagesTable).values([
+          { productId: product.id, url: product.coverImage ?? `https://placehold.co/400x550?text=${product.id}`, storageKey: `seed/${product.id}/primary.webp`, altText: product.nameAr, sortOrder: 0, isPrimary: true },
+          { productId: product.id, url: `https://placehold.co/400x550/f1f5f9/1e293b?text=Back+${product.id}`, storageKey: `seed/${product.id}/back.webp`, altText: `الغلاف الخلفي - ${product.nameAr}`, sortOrder: 1, isPrimary: false },
+        ]);
+      }
+    }
+
+    const employeeFixtures = [
+      { name: "مسؤول المبيعات", email: "sales@maktaba.com", role: "sales" as const, permissions: ["orders.view", "orders.edit", "customers.view"] },
+      { name: "أمين المخزن", email: "warehouse@maktaba.com", role: "warehouse" as const, permissions: ["products.view", "inventory.adjust"] },
+      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "content.manage"] },
+    ];
+    const employeePasswordHash = await bcrypt.hash("Employee@2025", 12);
+    for (const employee of employeeFixtures) {
+      const [found] = await tx.select().from(usersTable).where(eq(usersTable.email, employee.email));
+      if (!found) await tx.insert(usersTable).values({ ...employee, passwordHash: employeePasswordHash });
+    }
+
+    let [customer] = await tx.select().from(customersTable).where(eq(customersTable.mobile, "01012345678"));
+    if (!customer) {
+      [customer] = await tx.insert(customersTable).values({ name: "أحمد محمود", mobile: "01012345678", email: "ahmed@example.com", passwordHash: await bcrypt.hash("Customer@2025", 12) }).returning();
+    }
+
+    const [existingCoupon] = await tx.select().from(couponsTable).where(eq(couponsTable.code, "FREESHIP"));
+    if (!existingCoupon) await tx.insert(couponsTable).values({ code: "FREESHIP", type: "free_shipping", value: "0", minOrderAmount: "100", maxUses: 100 });
+
+    const [existingOrder] = await tx.select().from(ordersTable).where(eq(ordersTable.orderNumber, "MK-SEED-0001"));
+    const firstProduct = allProducts[0];
+    if (!existingOrder && customer && cairo && firstProduct) {
+      const subtotal = Number(firstProduct.price) * 2;
+      const [order] = await tx.insert(ordersTable).values({
+        orderNumber: "MK-SEED-0001", customerId: customer.id, customerName: customer.name,
+        mobile: customer.mobile, governorateId: cairo.id, governorateName: cairo.nameAr,
+        city: "مدينة نصر", detailedAddress: "١٢ شارع المدرسة، الدور الثالث",
+        status: "confirmed", paymentMethod: "cash_on_delivery", paymentStatus: "cash_on_delivery",
+        subtotal: String(subtotal), shippingCost: cairo.shippingCost, shippingBaseCost: cairo.shippingCost,
+        shippingSurcharge: "0", shippingDiscount: "0", total: String(subtotal + Number(cairo.shippingCost)),
+        shippingRuleSnapshot: { governorateId: cairo.id, governorateName: cairo.nameAr, city: "مدينة نصر", baseCost: Number(cairo.shippingCost), surcharge: 0, finalCost: Number(cairo.shippingCost), reason: null },
+      }).returning();
+      await tx.insert(orderItemsTable).values({ orderId: order.id, productId: firstProduct.id, nameAr: firstProduct.nameAr, coverImage: firstProduct.coverImage, quantity: 2, unitPrice: firstProduct.price, subtotal: String(subtotal) });
+      await tx.insert(orderStatusHistoryTable).values({ orderId: order.id, status: "confirmed", notes: "طلب تجريبي مؤكد" });
+      await tx.insert(stockMovementsTable).values({ productId: firstProduct.id, movementType: "sale", quantityBefore: firstProduct.stockQuantity, quantityAfter: firstProduct.stockQuantity - 2, quantityChanged: -2, reason: "طلب seed واقعي", orderId: order.id });
+    }
+
+    const [owner] = await tx.select().from(usersTable).where(eq(usersTable.email, "admin@maktaba.com"));
+    const [existingAudit] = await tx.select().from(auditLogsTable).where(eq(auditLogsTable.action, "seed.completed"));
+    if (!existingAudit) await tx.insert(auditLogsTable).values({ employeeId: owner?.id, employeeName: owner?.name, action: "seed.completed", entityType: "system", description: "تهيئة بيانات تطوير واقعية", afterData: { database: "postgresql", fixturesVersion: 1 } });
+  });
+
+  console.log("✅ Product images, cities, customers, orders, employees, permissions, inventory and audit fixtures");
   console.log("🎉 Seed complete!");
   process.exit(0);
 }

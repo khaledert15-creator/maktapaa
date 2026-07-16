@@ -96,7 +96,7 @@ router.get("/admin/products/:id", async (req, res): Promise<void> => {
 router.patch("/admin/products/:id", requireAdminPermission("products.edit"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { price, oldPrice, purchasePrice, stockQuantity, ...rest } = req.body;
+  const { price, oldPrice, purchasePrice, stockQuantity: _stockQuantity, ...rest } = req.body;
   const [before] = await db.select().from(productsTable).where(eq(productsTable.id, id));
 
   const updateData: Record<string, unknown> = { ...rest };
@@ -124,25 +124,18 @@ router.patch("/admin/products/:id/stock", requireAdminPermission("inventory.adju
   const { quantity, movementType, reason } = req.body;
   
 
-  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, id));
-  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
-
-  const quantityBefore = product.stockQuantity;
-  let quantityAfter = quantityBefore;
-
-  if (["purchase", "return", "manual_increase", "adjustment"].includes(movementType)) {
-    quantityAfter = quantityBefore + Math.abs(quantity);
-  } else {
-    quantityAfter = Math.max(0, quantityBefore - Math.abs(quantity));
-  }
-
-  const [updated] = await db.update(productsTable).set({ stockQuantity: quantityAfter }).where(eq(productsTable.id, id)).returning();
-
-  await db.insert(stockMovementsTable).values({
-    productId: id, movementType, quantityBefore, quantityAfter,
-    quantityChanged: quantityAfter - quantityBefore, reason: reason || null,
-    employeeId: req.session.adminId as number || null,
+  const result = await db.transaction(async (tx) => {
+    const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, id)).for("update");
+    if (!product) return null;
+    const quantityBefore = product.stockQuantity;
+    const quantityAfter = ["purchase", "return", "manual_increase", "adjustment"].includes(movementType)
+      ? quantityBefore + Math.abs(Number(quantity)) : Math.max(0, quantityBefore - Math.abs(Number(quantity)));
+    const [updated] = await tx.update(productsTable).set({ stockQuantity: quantityAfter }).where(eq(productsTable.id, id)).returning();
+    await tx.insert(stockMovementsTable).values({ productId: id, movementType, quantityBefore, quantityAfter, quantityChanged: quantityAfter - quantityBefore, reason: reason || null, employeeId: req.session.adminId as number || null });
+    return { product, updated, quantityBefore, quantityAfter };
   });
+  if (!result) { res.status(404).json({ error: "Product not found" }); return; }
+  const { product, updated, quantityBefore, quantityAfter } = result;
   await writeAuditLog(req, { action: "inventory.adjust", entityType: "product", entityId: id, description: `تعديل مخزون ${product.nameAr} من ${quantityBefore} إلى ${quantityAfter}`, beforeData: { stockQuantity: quantityBefore }, afterData: { stockQuantity: quantityAfter, reason } });
 
   res.json(mapAdminProduct(updated));
@@ -174,10 +167,13 @@ router.patch("/admin/products/:productId/images/:imageId", requireAdminPermissio
   const productId = Number(Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId);
   const imageId = Number(Array.isArray(req.params.imageId) ? req.params.imageId[0] : req.params.imageId);
   const { altText, sortOrder, isPrimary } = req.body;
-  if (isPrimary) await db.update(productImagesTable).set({ isPrimary: false }).where(eq(productImagesTable.productId, productId));
-  const [image] = await db.update(productImagesTable).set({ ...(altText !== undefined && { altText }), ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }), ...(isPrimary !== undefined && { isPrimary: Boolean(isPrimary) }) }).where(eq(productImagesTable.id, imageId)).returning();
+  const image = await db.transaction(async (tx) => {
+    if (isPrimary) await tx.update(productImagesTable).set({ isPrimary: false }).where(eq(productImagesTable.productId, productId));
+    const [updatedImage] = await tx.update(productImagesTable).set({ ...(altText !== undefined && { altText }), ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }), ...(isPrimary !== undefined && { isPrimary: Boolean(isPrimary) }) }).where(and(eq(productImagesTable.id, imageId), eq(productImagesTable.productId, productId))).returning();
+    if (updatedImage?.isPrimary) await tx.update(productsTable).set({ coverImage: updatedImage.url }).where(eq(productsTable.id, productId));
+    return updatedImage;
+  });
   if (!image) { res.status(404).json({ error: "الصورة غير موجودة" }); return; }
-  if (image.isPrimary) await db.update(productsTable).set({ coverImage: image.url }).where(eq(productsTable.id, productId));
   await writeAuditLog(req, { action: "product.images.update", entityType: "product", entityId: productId, description: "تحديث ترتيب أو صورة المنتج الرئيسية" });
   res.json(image);
 });

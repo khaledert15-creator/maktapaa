@@ -1,11 +1,9 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
-import { useListProducts, useListStages, useListGrades, useListSubjects, useListPublishers } from "@workspace/api-client-react";
+import { useListProducts, useListStages, useListPublishers } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BookOpen, Filter, X } from "lucide-react";
@@ -14,7 +12,6 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from "@/co
 import { Link } from "wouter";
 
 export default function Catalog() {
-  const [location, setLocation] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
   
   const [page, setPage] = useState(1);
