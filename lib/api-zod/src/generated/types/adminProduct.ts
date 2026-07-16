@@ -24,6 +24,8 @@ export interface AdminProduct {
   /** @nullable */
   oldPrice?: number | null;
   /** @nullable */
+  purchasePrice?: number | null;
+  /** @nullable */
   sku?: string | null;
   /** @nullable */
   barcode?: string | null;
@@ -49,6 +51,8 @@ export interface AdminProduct {
   edition?: string | null;
   /** @nullable */
   schoolYear?: string | null;
+  /** @nullable */
+  author?: string | null;
   isBestSeller?: boolean;
   isFeatured?: boolean;
   isNew?: boolean;

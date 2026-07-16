@@ -1,66 +1,20 @@
 import { Link, useParams } from "wouter";
-import { CheckCircle2, Package, Truck } from "lucide-react";
+import { CheckCircle2, Package, Truck, Wallet } from "lucide-react";
+import { getGetOrderConfirmationQueryKey, useGetOrderConfirmation } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { OrderTimeline, orderStatusLabels } from "@/components/storefront/OrderTimeline";
+import { Seo } from "@/components/storefront/Seo";
 
 export default function OrderConfirmation() {
   const { orderNumber } = useParams<{ orderNumber: string }>();
-  // In a real app we might fetch the specific order by number
-  // For now we'll just fetch orders and try to match, or just show the number
-  
-  return (
-    <div className="container mx-auto px-4 py-16 flex flex-col items-center">
-      <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6 text-green-600 animate-in zoom-in duration-500">
-        <CheckCircle2 className="w-14 h-14" />
-      </div>
-      
-      <h1 className="text-3xl md:text-4xl font-black text-primary mb-2 text-center">
-        تم تأكيد طلبك بنجاح!
-      </h1>
-      
-      <p className="text-muted-foreground text-center max-w-md mb-8">
-        شكراً لتسوقك من مكتبة دوت كوم. جاري تجهيز طلبك وسنتواصل معك قريباً لتأكيد موعد التسليم.
-      </p>
-
-      <Card className="w-full max-w-md border-border/50 shadow-md mb-8">
-        <CardContent className="p-6">
-          <div className="text-center pb-6 border-b mb-6">
-            <span className="text-sm text-muted-foreground block mb-1">رقم الطلب</span>
-            <span className="text-3xl font-black font-mono tracking-wider text-primary">{orderNumber}</span>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/5 rounded-full flex items-center justify-center text-primary shrink-0">
-                <Package className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-bold">حالة الطلب</div>
-                <div className="text-sm text-muted-foreground">قيد المراجعة</div>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-secondary/10 rounded-full flex items-center justify-center text-secondary shrink-0">
-                <Truck className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-bold">الشحن والتوصيل</div>
-                <div className="text-sm text-muted-foreground">يتم التوصيل خلال 2-4 أيام عمل</div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-col sm:flex-row gap-4">
-        <Button size="lg" variant="outline" className="px-8" asChild>
-          <Link href="/catalog">متابعة التسوق</Link>
-        </Button>
-        <Button size="lg" className="px-8" asChild>
-          <Link href={`/track?orderNumber=${orderNumber}`}>تتبع الطلب</Link>
-        </Button>
-      </div>
-    </div>
-  );
+  const { data: order, isLoading, isError } = useGetOrderConfirmation(orderNumber, { query: { queryKey: getGetOrderConfirmationQueryKey(orderNumber), retry: false } });
+  if (isLoading) return <div className="container mx-auto max-w-3xl space-y-5 px-4 py-16"><Skeleton className="mx-auto h-24 w-24 rounded-full" /><Skeleton className="mx-auto h-12 w-96 max-w-full" /><Skeleton className="h-96 rounded-3xl" /></div>;
+  if (isError || !order) return <div className="container mx-auto px-4 py-24 text-center"><Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/30" /><h1 className="text-2xl font-black">تعذر فتح تفاصيل هذا الطلب</h1><p className="mt-2 text-muted-foreground">تفاصيل طلب الضيف متاحة من نفس المتصفح الذي أنشأ الطلب.</p><Button className="mt-6" asChild><Link href="/track">تتبع الطلب برقم الهاتف</Link></Button></div>;
+  return <div className="container mx-auto max-w-4xl px-4 py-12 sm:py-16"><Seo title={`تم استلام الطلب ${order.orderNumber} | مكتبة دوت كوم`} description="تأكيد طلبك وتفاصيل الشحن والدفع." /><div className="text-center"><div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckCircle2 className="h-14 w-14" /></div><h1 className="mt-6 text-3xl font-black sm:text-4xl">تم استلام طلبك بنجاح</h1><p className="mx-auto mt-3 max-w-xl text-muted-foreground">سيراجع فريق مكتبة دوت كوم الطلب ويتواصل معك عند الحاجة. الدفع نقدًا عند الاستلام.</p></div>
+    <Card className="mt-9 overflow-hidden rounded-3xl shadow-lg"><div className="grid gap-4 bg-slate-950 p-6 text-white sm:grid-cols-3"><div><span className="text-xs text-slate-400">رقم الطلب</span><strong className="block text-xl" dir="ltr">{order.orderNumber}</strong></div><div><span className="text-xs text-slate-400">الحالة</span><strong className="block">{orderStatusLabels[order.status] || order.status}</strong></div><div><span className="text-xs text-slate-400">الإجمالي</span><strong className="block text-xl">{order.total.toLocaleString("ar-EG")} ج.م</strong></div></div><CardContent className="grid gap-8 p-6 md:grid-cols-2 md:p-8"><div><h2 className="mb-5 text-xl font-black">الكتب المطلوبة</h2><div className="space-y-4">{order.items.map(item => <div key={`${item.productId}-${item.nameAr}`} className="flex items-center gap-3"><div className="h-16 w-12 overflow-hidden rounded-lg bg-muted">{item.coverImage ? <img src={item.coverImage} alt={item.nameAr} className="h-full w-full object-cover" /> : <Package className="h-full w-full p-3 text-muted-foreground/30" />}</div><div className="min-w-0 flex-1"><strong className="line-clamp-2 text-sm">{item.nameAr}</strong><span className="text-xs text-muted-foreground">{item.quantity} × {item.unitPrice} ج.م</span></div><strong>{item.subtotal} ج.م</strong></div>)}</div><div className="mt-6 space-y-2 border-t pt-5 text-sm"><Row label="المنتجات" value={`${order.subtotal} ج.م`} /><Row label="الشحن" value={order.shippingCost === 0 ? "مجانًا" : `${order.shippingCost} ج.م`} />{order.freeShippingReason && <p className="rounded-lg bg-emerald-50 p-2 text-emerald-700">{order.freeShippingReason}</p>}<Row label="الإجمالي" value={`${order.total} ج.م`} strong /></div></div><div><h2 className="mb-5 text-xl font-black">تحديثات الطلب</h2><OrderTimeline history={order.statusHistory} /><div className="mt-7 space-y-3 rounded-2xl bg-slate-50 p-4 text-sm"><p className="flex gap-2"><Truck className="h-5 w-5 text-secondary" /><span><strong className="block">عنوان التوصيل</strong>{order.governorate}، {order.city}، {order.detailedAddress}</span></p><p className="flex gap-2"><Wallet className="h-5 w-5 text-secondary" /><span><strong className="block">طريقة الدفع</strong>نقدًا عند الاستلام</span></p></div></div></CardContent></Card>
+    <div className="mt-7 flex flex-wrap justify-center gap-3"><Button variant="outline" asChild><Link href="/catalog">متابعة التسوق</Link></Button><Button asChild><Link href={`/track?orderNumber=${encodeURIComponent(order.orderNumber)}&mobile=${encodeURIComponent(order.mobile || "")}`}>تتبع الطلب</Link></Button>{order.id && <Button variant="secondary" className="text-white" asChild><Link href={`/orders/${order.id}`}>تفاصيل الطلب</Link></Button>}</div>
+  </div>;
 }
+function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) { return <div className={`flex justify-between ${strong ? "border-t pt-3 text-lg font-black" : ""}`}><span>{label}</span><span>{value}</span></div>; }

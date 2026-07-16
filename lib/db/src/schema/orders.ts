@@ -34,6 +34,7 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 export const ordersTable = pgTable("orders", {
   id: serial("id").primaryKey(),
   orderNumber: text("order_number").notNull().unique(),
+  checkoutToken: text("checkout_token").unique(),
   customerId: integer("customer_id").references(() => customersTable.id, { onDelete: "set null" }),
   customerName: text("customer_name").notNull(),
   mobile: text("mobile").notNull(),

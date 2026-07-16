@@ -23,13 +23,26 @@ export interface ProductSummary {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  isOffer?: boolean;
+  isRevision?: boolean;
+  isBundle?: boolean;
   freeShipping?: boolean;
   /** @nullable */
   freeShippingBadgeText?: string | null;
   /** @nullable */
   publisher?: string | null;
   /** @nullable */
+  stage?: string | null;
+  /** @nullable */
   grade?: string | null;
   /** @nullable */
   subject?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  educationType?: string | null;
+  /** @nullable */
+  schoolYear?: string | null;
+  /** @nullable */
+  author?: string | null;
 }

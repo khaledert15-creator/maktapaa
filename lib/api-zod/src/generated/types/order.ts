@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OrderItem } from './orderItem';
+import type { OrderShippingRuleSnapshot } from './orderShippingRuleSnapshot';
 import type { OrderStatusHistory } from './orderStatusHistory';
 
 export interface Order {
@@ -30,7 +31,16 @@ export interface Order {
   subtotal: number;
   discount?: number;
   couponDiscount?: number;
+  /** @nullable */
+  couponCode?: string | null;
   shippingCost: number;
+  shippingBaseCost?: number;
+  shippingSurcharge?: number;
+  shippingDiscount?: number;
+  /** @nullable */
+  freeShippingReason?: string | null;
+  /** @nullable */
+  shippingRuleSnapshot?: OrderShippingRuleSnapshot;
   total: number;
   /** @nullable */
   estimatedDeliveryDate?: string | null;

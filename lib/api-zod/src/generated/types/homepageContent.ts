@@ -6,10 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Banner } from './banner';
+import type { Category } from './category';
+import type { Grade } from './grade';
 import type { ProductSummary } from './productSummary';
 import type { Publisher } from './publisher';
 import type { SiteSettings } from './siteSettings';
 import type { Stage } from './stage';
+import type { Subject } from './subject';
 
 export interface HomepageContent {
   banners?: Banner[];
@@ -17,7 +20,14 @@ export interface HomepageContent {
   bestSellers?: ProductSummary[];
   newArrivals?: ProductSummary[];
   revisionBooks?: ProductSummary[];
+  offers?: ProductSummary[];
+  bundles?: ProductSummary[];
+  freeShippingProducts?: ProductSummary[];
+  recommendedProducts?: ProductSummary[];
   stages?: Stage[];
+  grades?: Grade[];
+  subjects?: Subject[];
+  categories?: Category[];
   publishers?: Publisher[];
   settings?: SiteSettings;
 }

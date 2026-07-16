@@ -26,7 +26,7 @@ function mapAdminProduct(p: typeof productsTable.$inferSelect) {
     minStockLevel: p.minStockLevel,
     stageId: p.stageId, gradeId: p.gradeId, subjectId: p.subjectId, publisherId: p.publisherId, categoryId: p.categoryId,
     educationType: p.educationType, bookType: p.bookType, edition: p.edition,
-    schoolYear: p.schoolYear,
+    schoolYear: p.schoolYear, author: p.author,
     isBestSeller: p.isBestSeller, isFeatured: p.isFeatured, isNew: p.isNew,
     isRevision: p.isRevision, isBundle: p.isBundle, sortOrder: p.sortOrder,
     isOffer: p.isOffer, freeShipping: p.freeShipping,

@@ -4,6 +4,7 @@ import {
   productsTable, usersTable, siteSettingsTable, bannersTable, faqsTable, categoriesTable,
   productImagesTable, citiesTable, customersTable, ordersTable, orderItemsTable,
   orderStatusHistoryTable, stockMovementsTable, couponsTable, auditLogsTable,
+  addressesTable, favoritesTable,
 } from "@workspace/db";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
@@ -272,8 +273,25 @@ async function seed() {
   await db.transaction(async (tx) => {
     const allProducts = await tx.select().from(productsTable);
     const allGovernorates = await tx.select().from(governoratesTable);
+    const allStages = await tx.select().from(stagesTable);
+    const allCategories = await tx.select().from(categoriesTable);
     const cairo = allGovernorates.find(g => g.nameEn === "Cairo") ?? allGovernorates[0];
     const giza = allGovernorates.find(g => g.nameEn === "Giza") ?? allGovernorates[1];
+
+    // Make the development storefront exercise every public section while
+    // preserving values explicitly maintained by an administrator.
+    for (const [index, product] of allProducts.entries()) {
+      const stageName = allStages.find(stage => stage.id === product.stageId)?.nameAr || "";
+      const category = allCategories.find(item => stageName && item.nameAr.includes(stageName))
+        ?? (product.isRevision ? allCategories.find(item => item.slug === "revision") : undefined)
+        ?? (product.isBundle ? allCategories.find(item => item.slug === "bundles") : undefined);
+      await tx.update(productsTable).set({
+        ...(product.categoryId == null && category ? { categoryId: category.id } : {}),
+        ...(product.oldPrice && Number(product.oldPrice) > Number(product.price) ? { isOffer: true } : {}),
+        ...(product.schoolYear == null ? { schoolYear: "2026/2027" } : {}),
+        ...(index === 0 && !product.freeShipping ? { freeShipping: true, freeShippingBadgeText: "شحن مجاني" } : {}),
+      }).where(eq(productsTable.id, product.id));
+    }
 
     if (cairo) {
       const existingCities = await tx.select().from(citiesTable).where(eq(citiesTable.governorateId, cairo.id));
@@ -318,6 +336,11 @@ async function seed() {
     let [customer] = await tx.select().from(customersTable).where(eq(customersTable.mobile, "01012345678"));
     if (!customer) {
       [customer] = await tx.insert(customersTable).values({ name: "أحمد محمود", mobile: "01012345678", email: "ahmed@example.com", passwordHash: await bcrypt.hash("Customer@2025", 12) }).returning();
+    }
+    if (customer && cairo) {
+      const [savedAddress] = await tx.select().from(addressesTable).where(eq(addressesTable.customerId, customer.id));
+      if (!savedAddress) await tx.insert(addressesTable).values({ customerId: customer.id, governorateId: cairo.id, governorateName: cairo.nameAr, city: "مدينة نصر", detailedAddress: "١٢ شارع المدرسة، الدور الثالث", landmark: "بجوار المكتبة", isDefault: true });
+      if (allProducts[0]) await tx.insert(favoritesTable).values({ customerId: customer.id, productId: allProducts[0].id }).onConflictDoNothing();
     }
 
     const [existingCoupon] = await tx.select().from(couponsTable).where(eq(couponsTable.code, "FREESHIP"));

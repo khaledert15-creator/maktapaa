@@ -159,10 +159,19 @@ paths:
           name: publisherId
           schema: { type: integer }
         - in: query
+          name: categoryId
+          schema: { type: integer }
+        - in: query
           name: educationType
           schema: { type: string }
         - in: query
           name: bookType
+          schema: { type: string }
+        - in: query
+          name: author
+          schema: { type: string }
+        - in: query
+          name: schoolYear
           schema: { type: string }
         - in: query
           name: minPrice
@@ -187,6 +196,15 @@ paths:
           schema: { type: boolean }
         - in: query
           name: isBundle
+          schema: { type: boolean }
+        - in: query
+          name: isOffer
+          schema: { type: boolean }
+        - in: query
+          name: isFeatured
+          schema: { type: boolean }
+        - in: query
+          name: freeShipping
           schema: { type: boolean }
         - in: query
           name: sortBy
@@ -261,6 +279,25 @@ paths:
       responses:
         "200":
           description: Related products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductSummary"
+
+  /products/{id}/frequently-bought:
+    get:
+      operationId: getFrequentlyBoughtProducts
+      tags: [products]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Products frequently purchased together
           content:
             application/json:
               schema:
@@ -363,6 +400,43 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Governorate"
+
+  /governorates/{id}/cities:
+    get:
+      operationId: listGovernorateCities
+      tags: [shipping]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Active cities for a governorate
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/City"
+
+  /shipping/quote:
+    post:
+      operationId: getShippingQuote
+      tags: [shipping]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShippingQuoteInput"
+      responses:
+        "200":
+          description: Unified shipping calculation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShippingQuote"
 
   # ─── CART ────────────────────────────────────────────────────────────────────
   /cart:
@@ -503,6 +577,25 @@ paths:
         "404":
           description: Not found
 
+  /orders/confirmation/{orderNumber}:
+    get:
+      operationId: getOrderConfirmation
+      tags: [orders]
+      parameters:
+        - in: path
+          name: orderNumber
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Order created in the current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Not found
+
   /orders/my:
     get:
       operationId: getMyOrders
@@ -612,6 +705,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Address"
+
+  /customers/me/addresses/{id}:
+    patch:
+      operationId: updateCustomerAddress
+      tags: [customers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressInput"
+      responses:
+        "200":
+          description: Address updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+    delete:
+      operationId: deleteCustomerAddress
+      tags: [customers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Address deleted
 
   /customers/me/favorites:
     get:
@@ -1843,6 +1970,7 @@ components:
       required: [id, governorate, city, detailedAddress]
       properties:
         id: { type: integer }
+        governorateId: { type: integer }
         governorate: { type: string }
         city: { type: string }
         detailedAddress: { type: string }
@@ -1876,11 +2004,19 @@ components:
         isBestSeller: { type: boolean }
         isNew: { type: boolean }
         isFeatured: { type: boolean }
+        isOffer: { type: boolean }
+        isRevision: { type: boolean }
+        isBundle: { type: boolean }
         freeShipping: { type: boolean }
         freeShippingBadgeText: { type: ["string", "null"] }
         publisher: { type: ["string", "null"] }
+        stage: { type: ["string", "null"] }
         grade: { type: ["string", "null"] }
         subject: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        educationType: { type: ["string", "null"] }
+        schoolYear: { type: ["string", "null"] }
+        author: { type: ["string", "null"] }
 
     Product:
       type: object
@@ -1904,6 +2040,7 @@ components:
         isBestSeller: { type: boolean }
         isNew: { type: boolean }
         isFeatured: { type: boolean }
+        isOffer: { type: boolean }
         freeShipping: { type: boolean }
         freeShippingBadgeText: { type: ["string", "null"] }
         isRevision: { type: boolean }
@@ -1919,6 +2056,8 @@ components:
         author: { type: ["string", "null"] }
         avgRating: { type: ["number", "null"] }
         reviewCount: { type: integer }
+        seoTitle: { type: ["string", "null"] }
+        seoDescription: { type: ["string", "null"] }
 
     ProductListResponse:
       type: object
@@ -2075,6 +2214,49 @@ components:
         estimatedDays: { type: integer }
         isActive: { type: boolean }
 
+    City:
+      type: object
+      required: [id, governorateId, nameAr, surcharge]
+      properties:
+        id: { type: integer }
+        governorateId: { type: integer }
+        nameAr: { type: string }
+        surcharge: { type: number }
+        shippingPriceOverride: { type: ["number", "null"] }
+
+    ShippingQuoteInput:
+      type: object
+      required: [governorateId]
+      properties:
+        governorateId: { type: integer }
+        city: { type: string }
+        couponCode: { type: string }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartItemInput"
+
+    ShippingQuote:
+      type: object
+      required: [baseCost, surcharge, discount, finalCost, rule, governorateId, governorateName, subtotal, estimatedDays, snapshot]
+      properties:
+        baseCost: { type: number }
+        surcharge: { type: number }
+        discount: { type: number }
+        finalCost: { type: number }
+        freeShippingReason: { type: ["string", "null"] }
+        rule: { type: string, enum: [all_products_free, coupon, governorate_threshold, standard] }
+        governorateId: { type: integer }
+        governorateName: { type: string }
+        city: { type: ["string", "null"] }
+        cityId: { type: ["integer", "null"] }
+        subtotal: { type: number }
+        estimatedDays: { type: integer }
+        estimatedDeliveryText: { type: ["string", "null"] }
+        snapshot:
+          type: object
+          additionalProperties: true
+
     GovernorateInput:
       type: object
       required: [nameAr, shippingCost, estimatedDays]
@@ -2164,8 +2346,9 @@ components:
         landmark: { type: ["string", "null"] }
         deliveryNotes: { type: ["string", "null"] }
         orderNotes: { type: ["string", "null"] }
-        paymentMethod: { type: string, enum: [cash_on_delivery, fawry] }
+        paymentMethod: { type: string, enum: [cash_on_delivery] }
         couponCode: { type: ["string", "null"] }
+        checkoutToken: { type: string, minLength: 12, maxLength: 100 }
         cartItems:
           type: array
           items:
@@ -2212,7 +2395,15 @@ components:
         subtotal: { type: number }
         discount: { type: number }
         couponDiscount: { type: number }
+        couponCode: { type: ["string", "null"] }
         shippingCost: { type: number }
+        shippingBaseCost: { type: number }
+        shippingSurcharge: { type: number }
+        shippingDiscount: { type: number }
+        freeShippingReason: { type: ["string", "null"] }
+        shippingRuleSnapshot:
+          type: ["object", "null"]
+          additionalProperties: true
         total: { type: number }
         estimatedDeliveryDate: { type: ["string", "null"] }
         trackingNumber: { type: ["string", "null"] }
@@ -2385,10 +2576,38 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProductSummary"
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+        bundles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+        freeShippingProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+        recommendedProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
         stages:
           type: array
           items:
             $ref: "#/components/schemas/Stage"
+        grades:
+          type: array
+          items:
+            $ref: "#/components/schemas/Grade"
+        subjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subject"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
         publishers:
           type: array
           items:
@@ -2489,6 +2708,7 @@ components:
         images: { type: array, items: { type: string } }
         price: { type: number }
         oldPrice: { type: ["number", "null"] }
+        purchasePrice: { type: ["number", "null"] }
         sku: { type: ["string", "null"] }
         barcode: { type: ["string", "null"] }
         status: { type: string, enum: [active, draft, archived] }
@@ -2504,6 +2724,7 @@ components:
         bookType: { type: ["string", "null"] }
         edition: { type: ["string", "null"] }
         schoolYear: { type: ["string", "null"] }
+        author: { type: ["string", "null"] }
         isBestSeller: { type: boolean }
         isFeatured: { type: boolean }
         isNew: { type: boolean }

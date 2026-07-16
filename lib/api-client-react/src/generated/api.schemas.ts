@@ -56,6 +56,7 @@ export interface CustomerProfileUpdate {
 
 export interface Address {
   id: number;
+  governorateId?: number;
   governorate: string;
   city: string;
   detailedAddress: string;
@@ -89,15 +90,28 @@ export interface ProductSummary {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  isOffer?: boolean;
+  isRevision?: boolean;
+  isBundle?: boolean;
   freeShipping?: boolean;
   /** @nullable */
   freeShippingBadgeText?: string | null;
   /** @nullable */
   publisher?: string | null;
   /** @nullable */
+  stage?: string | null;
+  /** @nullable */
   grade?: string | null;
   /** @nullable */
   subject?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  educationType?: string | null;
+  /** @nullable */
+  schoolYear?: string | null;
+  /** @nullable */
+  author?: string | null;
 }
 
 export interface Product {
@@ -127,6 +141,7 @@ export interface Product {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  isOffer?: boolean;
   freeShipping?: boolean;
   /** @nullable */
   freeShippingBadgeText?: string | null;
@@ -153,6 +168,10 @@ export interface Product {
   /** @nullable */
   avgRating?: number | null;
   reviewCount?: number;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
 }
 
 export interface ProductListResponse {
@@ -282,6 +301,60 @@ export interface Governorate {
   isActive: boolean;
 }
 
+export interface City {
+  id: number;
+  governorateId: number;
+  nameAr: string;
+  surcharge: number;
+  /** @nullable */
+  shippingPriceOverride?: number | null;
+}
+
+export interface CartItemInput {
+  productId: number;
+  quantity: number;
+}
+
+export interface ShippingQuoteInput {
+  governorateId: number;
+  city?: string;
+  couponCode?: string;
+  items?: CartItemInput[];
+}
+
+export type ShippingQuoteRule = typeof ShippingQuoteRule[keyof typeof ShippingQuoteRule];
+
+
+export const ShippingQuoteRule = {
+  all_products_free: 'all_products_free',
+  coupon: 'coupon',
+  governorate_threshold: 'governorate_threshold',
+  standard: 'standard',
+} as const;
+
+export type ShippingQuoteSnapshot = { [key: string]: unknown };
+
+export interface ShippingQuote {
+  baseCost: number;
+  surcharge: number;
+  discount: number;
+  finalCost: number;
+  /** @nullable */
+  freeShippingReason?: string | null;
+  rule: ShippingQuoteRule;
+  governorateId: number;
+  governorateName: string;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  cityId?: number | null;
+  subtotal: number;
+  estimatedDays: number;
+  /** @nullable */
+  estimatedDeliveryText?: string | null;
+  snapshot: ShippingQuoteSnapshot;
+}
+
 export interface GovernorateInput {
   nameAr: string;
   nameEn?: string;
@@ -334,11 +407,6 @@ export interface Cart {
   freeShippingReason?: string | null;
 }
 
-export interface CartItemInput {
-  productId: number;
-  quantity: number;
-}
-
 export interface CartItemUpdate {
   quantity: number;
 }
@@ -352,7 +420,6 @@ export type OrderInputPaymentMethod = typeof OrderInputPaymentMethod[keyof typeo
 
 export const OrderInputPaymentMethod = {
   cash_on_delivery: 'cash_on_delivery',
-  fawry: 'fawry',
 } as const;
 
 export interface OrderInput {
@@ -372,6 +439,11 @@ export interface OrderInput {
   paymentMethod: OrderInputPaymentMethod;
   /** @nullable */
   couponCode?: string | null;
+  /**
+     * @minLength 12
+     * @maxLength 100
+     */
+  checkoutToken?: string;
   cartItems?: CartItemInput[];
 }
 
@@ -392,6 +464,11 @@ export interface OrderStatusHistory {
   notes?: string | null;
   createdAt: string;
 }
+
+/**
+ * @nullable
+ */
+export type OrderShippingRuleSnapshot = { [key: string]: unknown } | null;
 
 export interface Order {
   id: number;
@@ -415,7 +492,16 @@ export interface Order {
   subtotal: number;
   discount?: number;
   couponDiscount?: number;
+  /** @nullable */
+  couponCode?: string | null;
   shippingCost: number;
+  shippingBaseCost?: number;
+  shippingSurcharge?: number;
+  shippingDiscount?: number;
+  /** @nullable */
+  freeShippingReason?: string | null;
+  /** @nullable */
+  shippingRuleSnapshot?: OrderShippingRuleSnapshot;
   total: number;
   /** @nullable */
   estimatedDeliveryDate?: string | null;
@@ -561,7 +647,14 @@ export interface HomepageContent {
   bestSellers?: ProductSummary[];
   newArrivals?: ProductSummary[];
   revisionBooks?: ProductSummary[];
+  offers?: ProductSummary[];
+  bundles?: ProductSummary[];
+  freeShippingProducts?: ProductSummary[];
+  recommendedProducts?: ProductSummary[];
   stages?: Stage[];
+  grades?: Grade[];
+  subjects?: Subject[];
+  categories?: Category[];
   publishers?: Publisher[];
   settings?: SiteSettings;
 }
@@ -676,6 +769,8 @@ export interface AdminProduct {
   /** @nullable */
   oldPrice?: number | null;
   /** @nullable */
+  purchasePrice?: number | null;
+  /** @nullable */
   sku?: string | null;
   /** @nullable */
   barcode?: string | null;
@@ -701,6 +796,8 @@ export interface AdminProduct {
   edition?: string | null;
   /** @nullable */
   schoolYear?: string | null;
+  /** @nullable */
+  author?: string | null;
   isBestSeller?: boolean;
   isFeatured?: boolean;
   isNew?: boolean;
@@ -1087,8 +1184,11 @@ stageId?: number;
 gradeId?: number;
 subjectId?: number;
 publisherId?: number;
+categoryId?: number;
 educationType?: string;
 bookType?: string;
+author?: string;
+schoolYear?: string;
 minPrice?: number;
 maxPrice?: number;
 inStock?: boolean;
@@ -1097,6 +1197,9 @@ isBestSeller?: boolean;
 isNew?: boolean;
 isRevision?: boolean;
 isBundle?: boolean;
+isOffer?: boolean;
+isFeatured?: boolean;
+freeShipping?: boolean;
 sortBy?: ListProductsSortBy;
 };
 

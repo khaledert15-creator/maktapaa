@@ -1,398 +1,83 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useRef } from "react";
+import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { 
-  useGetCart, 
-  useListGovernorates, 
-  useCreateOrder, 
-  OrderInputPaymentMethod 
-} from "@workspace/api-client-react";
+import { z } from "zod";
+import { ArrowRight, BookOpen, CheckCircle2, MapPin, ShieldCheck, Truck, Wallet } from "lucide-react";
+import { getGetCartQueryKey, getGetMyOrdersQueryKey, getListCustomerAddressesQueryKey, getListGovernorateCitiesQueryKey, useCreateOrder, useGetCart, useGetShippingQuote, useListCustomerAddresses, useListGovernorateCities, useListGovernorates } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Truck, MapPin, Wallet, ArrowRight, BookOpen } from "lucide-react";
-import { getGetCartQueryKey, getGetMyOrdersQueryKey } from "@workspace/api-client-react";
+import { Seo } from "@/components/storefront/Seo";
 
-const formSchema = z.object({
-  customerName: z.string().min(2, "الاسم يجب أن يكون حرفين على الأقل"),
-  mobile: z.string().regex(/^01[0125][0-9]{8}$/, "رقم موبايل مصري غير صحيح"),
-  altMobile: z.string().regex(/^01[0125][0-9]{8}$/, "رقم موبايل مصري غير صحيح").optional().or(z.literal("")),
-  governorateId: z.coerce.number().min(1, "يرجى اختيار المحافظة"),
-  city: z.string().min(2, "يرجى إدخال المدينة أو الحي"),
-  detailedAddress: z.string().min(5, "يرجى إدخال العنوان بالتفصيل"),
-  landmark: z.string().optional(),
-  deliveryNotes: z.string().optional(),
-  orderNotes: z.string().optional(),
-  paymentMethod: z.enum(["cash_on_delivery", "fawry"]),
+const schema = z.object({
+  customerName: z.string().trim().min(2, "اكتب الاسم الكامل"), mobile: z.string().regex(/^01[0125][0-9]{8}$/, "رقم موبايل مصري غير صحيح"), altMobile: z.string().regex(/^01[0125][0-9]{8}$/, "رقم موبايل مصري غير صحيح").optional().or(z.literal("")),
+  governorateId: z.coerce.number().int().positive("اختر المحافظة"), city: z.string().trim().min(2, "اختر أو اكتب المدينة"), detailedAddress: z.string().trim().min(5, "اكتب العنوان بالتفصيل"), landmark: z.string().optional(), deliveryNotes: z.string().optional(), orderNotes: z.string().optional(), paymentMethod: z.literal("cash_on_delivery"),
 });
+type CheckoutValues = z.infer<typeof schema>;
 
 export default function Checkout() {
   const [, setLocation] = useLocation();
-  const { data: cart, isLoading: isLoadingCart } = useGetCart({ query: { queryKey: ['/api/cart'], retry: false } });
-  const { data: governorates } = useListGovernorates();
+  const { customer } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const checkoutToken = useRef(globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const { data: cart, isLoading } = useGetCart();
+  const { data: governorates } = useListGovernorates();
+  const { data: addresses } = useListCustomerAddresses({ query: { queryKey: getListCustomerAddressesQueryKey(), enabled: Boolean(customer), retry: false } });
+  const form = useForm<CheckoutValues>({ resolver: zodResolver(schema), defaultValues: { customerName: "", mobile: "", altMobile: "", city: "", detailedAddress: "", landmark: "", deliveryNotes: "", orderNotes: "", paymentMethod: "cash_on_delivery" } });
+  const governorateId = form.watch("governorateId");
+  const city = form.watch("city");
+  const { data: cities } = useListGovernorateCities(governorateId || 0, { query: { queryKey: getListGovernorateCitiesQueryKey(governorateId || 0), enabled: Boolean(governorateId) } });
+  const quote = useGetShippingQuote();
 
-  const [selectedGovId, setSelectedGovId] = useState<number | undefined>(undefined);
-  const selectedGov = governorates?.find(g => g.id === selectedGovId);
-  const allProductsFree = Boolean(cart?.items.length) && cart!.items.every(item => item.freeShipping);
-  const thresholdReached = Boolean(selectedGov?.freeShippingThreshold && cart && cart.subtotal >= selectedGov.freeShippingThreshold);
-  const shippingCost = allProductsFree || thresholdReached ? 0 : selectedGov?.shippingCost || 0;
-  const shippingReason = allProductsFree ? "جميع منتجات طلبك تشمل شحنًا مجانيًا" : thresholdReached ? "طلبك تجاوز حد الشحن المجاني للمحافظة" : null;
-  
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      customerName: "",
-      mobile: "",
-      altMobile: "",
-      city: "",
-      detailedAddress: "",
-      landmark: "",
-      deliveryNotes: "",
-      orderNotes: "",
-      paymentMethod: "cash_on_delivery",
-    },
-  });
-
-  const createOrderMutation = useCreateOrder({
-    mutation: {
-      onSuccess: (response) => {
-        queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetMyOrdersQueryKey() });
-        toast({ title: "تم تأكيد الطلب!", description: `رقم طلبك هو: ${response.orderNumber}` });
-        setLocation(`/order-confirmation/${response.orderNumber}`);
-      },
-      onError: () => {
-        toast({ title: "خطأ", description: "حدث خطأ أثناء إنشاء الطلب، يرجى المحاولة مرة أخرى", variant: "destructive" });
-      }
+  useEffect(() => { if (customer) { form.setValue("customerName", customer.name); form.setValue("mobile", customer.mobile); } }, [customer, form]);
+  useEffect(() => {
+    const address = addresses?.find(item => item.isDefault);
+    if (address && !form.getValues("detailedAddress")) {
+      if (address.governorateId) form.setValue("governorateId", address.governorateId);
+      form.setValue("city", address.city); form.setValue("detailedAddress", address.detailedAddress); form.setValue("landmark", address.landmark || "");
     }
-  });
+  }, [addresses, form]);
+  useEffect(() => {
+    if (!governorateId || !cart?.items.length) return;
+    const timer = window.setTimeout(() => quote.mutate({ data: { governorateId, city: city || undefined, couponCode: cart.couponCode || undefined } }), 250);
+    return () => window.clearTimeout(timer);
+  }, [governorateId, city, cart?.items.length, cart?.couponCode]);
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    if (!cart || cart.items.length === 0) {
-      toast({ title: "السلة فارغة", variant: "destructive" });
-      return;
-    }
+  const createOrder = useCreateOrder({ mutation: { onSuccess: order => { queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetMyOrdersQueryKey() }); setLocation(`/order-confirmation/${order.orderNumber}`); }, onError: () => toast({ title: "لم يتم إنشاء الطلب", description: "راجع المخزون وبيانات التوصيل ثم حاول مرة أخرى. لن يتم تكرار الطلب عند إعادة المحاولة.", variant: "destructive" }) } });
+  const submit = (values: CheckoutValues) => { if (!cart?.items.length || !quote.data) { toast({ title: "انتظر اكتمال حساب الشحن", variant: "destructive" }); return; } createOrder.mutate({ data: { ...values, altMobile: values.altMobile || null, checkoutToken: checkoutToken.current, couponCode: cart.couponCode || null } }); };
+  const applyAddress = (id: number) => { const address = addresses?.find(item => item.id === id); if (!address) return; if (address.governorateId) form.setValue("governorateId", address.governorateId); form.setValue("city", address.city); form.setValue("detailedAddress", address.detailedAddress); form.setValue("landmark", address.landmark || ""); };
 
-    createOrderMutation.mutate({
-      data: {
-        ...values,
-        paymentMethod: values.paymentMethod as OrderInputPaymentMethod,
-      }
-    });
-  };
+  if (isLoading) return <div className="container mx-auto grid gap-8 px-4 py-10 lg:grid-cols-3"><Skeleton className="h-[650px] rounded-3xl lg:col-span-2" /><Skeleton className="h-[500px] rounded-3xl" /></div>;
+  if (!cart?.items.length) return <div className="container mx-auto px-4 py-24 text-center"><BookOpen className="mx-auto mb-4 h-16 w-16 text-muted-foreground/30" /><h1 className="text-2xl font-black">سلتك فارغة</h1><Button className="mt-6" asChild><Link href="/catalog">ابدأ التسوق</Link></Button></div>;
+  const finalTotal = cart.subtotal - (cart.couponDiscount || 0) + (quote.data?.finalCost || 0);
 
-  if (isLoadingCart) {
-    return <div className="container mx-auto p-8 text-center">جاري تحميل البيانات...</div>;
-  }
-
-  if (!cart || cart.items.length === 0) {
-    setLocation('/cart');
-    return null;
-  }
-
-  const finalTotal = cart.total + shippingCost;
-
-  return (
-    <div className="container mx-auto px-4 py-8 bg-muted/20 min-h-[calc(100vh-200px)]">
-      <div className="flex items-center gap-4 mb-8">
-        <Button variant="ghost" size="icon" onClick={() => setLocation('/cart')}>
-          <ArrowRight className="h-5 w-5" />
-        </Button>
-        <h1 className="text-2xl md:text-3xl font-bold text-primary">إتمام الطلب</h1>
+  return <div className="min-h-screen bg-slate-50/70 py-8"><Seo title="إتمام الطلب | مكتبة دوت كوم" description="أدخل بيانات التوصيل وأكد طلبك بالدفع عند الاستلام." /><div className="container mx-auto px-4"><div className="mb-7 flex items-center gap-3"><Button variant="ghost" size="icon" asChild><Link href="/cart"><ArrowRight className="h-5 w-5" /></Link></Button><div><h1 className="text-3xl font-black">إتمام الطلب</h1><p className="text-sm text-muted-foreground">خطوة واحدة وتبدأ المكتبة تجهيز كتبك</p></div></div>
+    <Form {...form}><form onSubmit={form.handleSubmit(submit)} className="grid gap-8 lg:grid-cols-[1fr_380px]">
+      <div className="space-y-6">
+        {addresses?.length ? <Card className="rounded-2xl"><CardHeader><CardTitle className="text-lg">استخدم عنوانًا محفوظًا</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-3">{addresses.map(address => <button type="button" key={address.id} onClick={() => applyAddress(address.id)} className="rounded-xl border p-3 text-right text-sm transition hover:border-secondary hover:bg-sky-50"><strong className="block">{address.governorate} - {address.city}</strong><span className="text-muted-foreground">{address.detailedAddress}</span>{address.isDefault && <span className="mr-2 text-xs font-bold text-secondary">الافتراضي</span>}</button>)}</CardContent></Card> : null}
+        <Card className="overflow-hidden rounded-2xl"><CardHeader className="border-b bg-white"><CardTitle className="flex gap-2"><MapPin className="h-5 w-5 text-secondary" /> بيانات الاستلام</CardTitle></CardHeader><CardContent className="grid gap-5 p-5 sm:grid-cols-2 sm:p-7">
+          <Field form={form} name="customerName" label="الاسم الكامل *" placeholder="الاسم ثلاثي" /><Field form={form} name="mobile" label="رقم الموبايل *" placeholder="01xxxxxxxxx" dir="ltr" /><Field form={form} name="altMobile" label="رقم بديل" placeholder="اختياري" dir="ltr" />
+          <FormField control={form.control} name="governorateId" render={({ field }) => <FormItem><FormLabel>المحافظة *</FormLabel><Select value={field.value ? String(field.value) : ""} onValueChange={value => { field.onChange(Number(value)); form.setValue("city", ""); }}><FormControl><SelectTrigger><SelectValue placeholder="اختر المحافظة" /></SelectTrigger></FormControl><SelectContent>{governorates?.filter(item => item.isActive).map(item => <SelectItem key={item.id} value={String(item.id)}>{item.nameAr}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>} />
+          <FormField control={form.control} name="city" render={({ field }) => <FormItem><FormLabel>المدينة / الحي *</FormLabel>{cities?.length ? <Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger></FormControl><SelectContent>{cities.map(item => <SelectItem key={item.id} value={item.nameAr}>{item.nameAr}{item.surcharge > 0 ? ` (+${item.surcharge} ج.م)` : ""}</SelectItem>)}</SelectContent></Select> : <FormControl><Input placeholder="اكتب المدينة أو الحي" {...field} /></FormControl>}<FormMessage /></FormItem>} />
+          <div className="sm:col-span-2"><Field form={form} name="detailedAddress" label="العنوان بالتفصيل *" placeholder="الشارع، رقم العقار، الدور، الشقة" /></div><Field form={form} name="landmark" label="علامة مميزة" placeholder="بجوار..." /><Field form={form} name="deliveryNotes" label="ملاحظات التوصيل" placeholder="الاتصال قبل الوصول..." />
+        </CardContent></Card>
+        <Card className="rounded-2xl"><CardHeader className="border-b"><CardTitle className="flex gap-2"><Wallet className="h-5 w-5 text-secondary" /> طريقة الدفع</CardTitle></CardHeader><CardContent className="p-6"><div className="flex items-center gap-4 rounded-2xl border-2 border-secondary bg-sky-50 p-4"><div className="rounded-full bg-secondary p-2 text-white"><CheckCircle2 className="h-5 w-5" /></div><div><strong>الدفع نقدًا عند الاستلام</strong><p className="text-sm text-muted-foreground">الطريقة الوحيدة المفعلة حاليًا. فوري غير مفعل.</p></div></div><div className="mt-5"><FormField control={form.control} name="orderNotes" render={({ field }) => <FormItem><FormLabel>ملاحظات على الطلب</FormLabel><FormControl><Textarea rows={3} placeholder="أي تفاصيل أخرى..." {...field} /></FormControl><FormMessage /></FormItem>} /></div></CardContent></Card>
       </div>
-      
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
-            {/* Delivery Info */}
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader className="bg-muted/30 pb-4 border-b">
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5 text-secondary" />
-                  بيانات التوصيل
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="customerName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>الاسم الكامل *</FormLabel>
-                        <FormControl><Input placeholder="الاسم ثلاثي" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="mobile"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>رقم الموبايل *</FormLabel>
-                          <FormControl><Input placeholder="01xxxxxxxxx" dir="ltr" className="text-right" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="altMobile"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>رقم بديل (اختياري)</FormLabel>
-                          <FormControl><Input placeholder="01xxxxxxxxx" dir="ltr" className="text-right" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="governorateId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>المحافظة *</FormLabel>
-                        <Select 
-                          onValueChange={(val) => {
-                            field.onChange(val);
-                            setSelectedGovId(Number(val));
-                          }} 
-                          defaultValue={field.value?.toString()}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="اختر المحافظة" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {governorates?.filter(g => g.isActive).map(gov => (
-                              <SelectItem key={gov.id} value={gov.id.toString()}>{gov.nameAr}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>المدينة / الحي *</FormLabel>
-                        <FormControl><Input placeholder="مثال: مدينة نصر، العباسية..." {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="md:col-span-2">
-                    <FormField
-                      control={form.control}
-                      name="detailedAddress"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>العنوان بالتفصيل *</FormLabel>
-                          <FormControl><Input placeholder="اسم الشارع، رقم العمارة، رقم الشقة..." {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="landmark"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>أقرب علامة مميزة (اختياري)</FormLabel>
-                        <FormControl><Input placeholder="بجوار كذا..." {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="deliveryNotes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ملاحظات التوصيل (اختياري)</FormLabel>
-                        <FormControl><Input placeholder="مثال: الاتصال قبل الوصول بساعة" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Payment Method */}
-            <Card className="border-border/50 shadow-sm">
-              <CardHeader className="bg-muted/30 pb-4 border-b">
-                <CardTitle className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5 text-secondary" />
-                  طريقة الدفع
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6">
-                <FormField
-                  control={form.control}
-                  name="paymentMethod"
-                  render={({ field }) => (
-                    <FormItem className="space-y-3">
-                      <FormControl>
-                        <RadioGroup
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                          className="flex flex-col space-y-1"
-                        >
-                          <FormItem className="flex items-center space-x-3 space-x-reverse space-y-0 p-4 border rounded-md cursor-pointer hover:bg-muted/50 data-[state=checked]:border-secondary data-[state=checked]:bg-secondary/5">
-                            <FormControl>
-                              <RadioGroupItem value="cash_on_delivery" />
-                            </FormControl>
-                            <FormLabel className="font-bold flex-1 cursor-pointer">
-                              الدفع عند الاستلام (كاش)
-                            </FormLabel>
-                            <div className="bg-secondary/10 text-secondary p-2 rounded-full">
-                              <Wallet className="h-5 w-5" />
-                            </div>
-                          </FormItem>
-                          <FormItem className="flex items-center space-x-3 space-x-reverse space-y-0 p-4 border rounded-md opacity-60 cursor-not-allowed">
-                            <FormControl>
-                              <RadioGroupItem value="fawry" disabled />
-                            </FormControl>
-                            <div className="flex-1">
-                              <FormLabel className="font-bold text-muted-foreground">
-                                الدفع عبر فوري
-                              </FormLabel>
-                              <p className="text-xs text-muted-foreground mt-1">قريباً</p>
-                            </div>
-                          </FormItem>
-                        </RadioGroup>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <div className="mt-6">
-                  <FormField
-                    control={form.control}
-                    name="orderNotes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ملاحظات على الطلب (اختياري)</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="أي تفاصيل أخرى تود إضافتها للطلب..." className="resize-none" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div>
-            <Card className="sticky top-24 border-border/50 shadow-md">
-              <CardHeader className="bg-muted/30 pb-4 border-b">
-                <CardTitle className="text-lg">ملخص الطلب</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="p-6 space-y-4">
-                  {cart.items.map(item => (
-                    <div key={item.productId} className="flex gap-3 items-center">
-                      <div className="w-12 h-16 bg-muted rounded overflow-hidden shrink-0">
-                         {item.coverImage ? (
-                            <img src={item.coverImage} alt={item.nameAr} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                              <BookOpen className="h-4 w-4" />
-                            </div>
-                          )}
-                      </div>
-                      <div className="flex-1 text-sm">
-                        <div className="font-bold line-clamp-1">{item.nameAr}</div>
-                        <div className="text-muted-foreground">{item.quantity} × {item.unitPrice} ج.م</div>
-                      </div>
-                      <div className="font-bold">{item.subtotal} ج.م</div>
-                    </div>
-                  ))}
-                </div>
-                
-                <div className="p-6 bg-muted/10 border-t space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">المجموع (قبل الخصم)</span>
-                    <span className="font-semibold">{cart.subtotal} ج.م</span>
-                  </div>
-                  
-                  {cart.discount && cart.discount > 0 && (
-                    <div className="flex justify-between text-green-600">
-                      <span>خصم المنتجات</span>
-                      <span className="font-semibold">-{cart.discount} ج.م</span>
-                    </div>
-                  )}
-
-                  {cart.couponCode && (
-                    <div className="flex justify-between text-accent-foreground font-medium">
-                      <span>كود خصم ({cart.couponCode})</span>
-                      <span>-{cart.couponDiscount} ج.م</span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Truck className="h-4 w-4" /> مصاريف الشحن
-                    </span>
-                    <span className="font-semibold">
-                      {selectedGovId ? (shippingCost === 0 ? "مجانًا" : `${shippingCost} ج.م`) : "يحدد لاحقاً"}
-                    </span>
-                  </div>
-                  
-                  {selectedGovId && selectedGov && selectedGov.estimatedDays && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      مدة التوصيل المتوقعة: {selectedGov.estimatedDays} أيام عمل
-                    </div>
-                  )}
-                  {shippingReason && <p className="text-xs font-medium text-emerald-700">{shippingReason}</p>}
-
-                  <div className="border-t pt-3 mt-3 flex justify-between items-center">
-                    <span className="font-bold text-lg">الإجمالي النهائي</span>
-                    <div className="text-2xl font-black text-primary">
-                      {finalTotal} ج.م
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-              <div className="p-6 pt-0 bg-muted/10">
-                <Button 
-                  type="submit" 
-                  size="lg" 
-                  className="w-full text-lg h-14" 
-                  disabled={createOrderMutation.isPending}
-                >
-                  {createOrderMutation.isPending ? "جاري التأكيد..." : "تأكيد الطلب الآن"}
-                </Button>
-                <p className="text-xs text-center text-muted-foreground mt-4">
-                  بالضغط على تأكيد الطلب، أنت توافق على شروط وأحكام مكتبة دوت كوم
-                </p>
-              </div>
-            </Card>
-          </div>
-        </form>
-      </Form>
-    </div>
-  );
+      <aside><Card className="sticky top-40 overflow-hidden rounded-2xl shadow-lg"><CardHeader className="border-b"><CardTitle>ملخص الطلب</CardTitle></CardHeader><CardContent className="p-0"><div className="max-h-72 space-y-4 overflow-y-auto p-5">{cart.items.map(item => <div key={item.productId} className="flex gap-3"><div className="h-16 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">{item.coverImage ? <img src={item.coverImage} alt={item.nameAr} className="h-full w-full object-cover" /> : <BookOpen className="h-full w-full p-3 text-muted-foreground/30" />}</div><div className="min-w-0 flex-1"><strong className="line-clamp-2 text-sm">{item.nameAr}</strong><span className="text-xs text-muted-foreground">{item.quantity} × {item.unitPrice} ج.م</span></div><strong className="text-sm">{item.subtotal} ج.م</strong></div>)}</div><div className="space-y-3 border-t bg-slate-50 p-5 text-sm"><Summary label="المنتجات" value={`${cart.subtotal} ج.م`} />{Boolean(cart.couponDiscount) && <Summary label={`الكوبون ${cart.couponCode || ""}`} value={`-${cart.couponDiscount} ج.م`} green />}<Summary label="أساس الشحن" value={quote.data ? `${quote.data.baseCost} ج.م` : "—"} /><Summary label="إضافة المنطقة" value={quote.data ? `${quote.data.surcharge} ج.م` : "—"} />{quote.data && quote.data.discount > 0 && <Summary label="خصم الشحن" value={`-${quote.data.discount} ج.م`} green />}<Summary label="الشحن النهائي" value={quote.data ? (quote.data.finalCost === 0 ? "مجانًا" : `${quote.data.finalCost} ج.م`) : governorateId ? "جاري الحساب..." : "اختر المحافظة"} />{quote.data?.freeShippingReason && <p className="rounded-lg bg-emerald-50 p-2 text-xs font-bold text-emerald-700">{quote.data.freeShippingReason}</p>}{quote.data && <p className="flex gap-2 text-xs text-muted-foreground"><Truck className="h-4 w-4" /> {quote.data.estimatedDeliveryText || `${quote.data.estimatedDays} أيام عمل تقريبًا`}</p>}<div className="flex items-end justify-between border-t pt-4"><strong className="text-lg">الإجمالي</strong><span className="text-3xl font-black text-primary">{finalTotal.toLocaleString("ar-EG")} ج.م</span></div></div><div className="p-5"><Button type="submit" disabled={createOrder.isPending || quote.isPending || !quote.data} className="h-14 w-full rounded-xl text-lg">{createOrder.isPending ? "جاري تسجيل الطلب..." : "تأكيد الطلب"}</Button><p className="mt-3 flex items-center justify-center gap-1 text-center text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4" /> الطلب محمي من التكرار عند الضغط أكثر من مرة</p></div></CardContent></Card></aside>
+    </form></Form>
+  </div></div>;
 }
+
+function Field({ form, name, label, placeholder, dir }: { form: ReturnType<typeof useForm<CheckoutValues>>; name: keyof CheckoutValues; label: string; placeholder: string; dir?: "ltr" | "rtl" }) {
+  return <FormField control={form.control} name={name} render={({ field }) => <FormItem><FormLabel>{label}</FormLabel><FormControl><Input placeholder={placeholder} dir={dir} value={String(field.value ?? "")} onChange={field.onChange} onBlur={field.onBlur} name={field.name} ref={field.ref} /></FormControl><FormMessage /></FormItem>} />;
+}
+function Summary({ label, value, green = false }: { label: string; value: string; green?: boolean }) { return <div className={`flex justify-between ${green ? "font-bold text-emerald-700" : ""}`}><span>{label}</span><span>{value}</span></div>; }

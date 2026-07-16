@@ -1,26 +1,44 @@
-import { CustomerLayout } from "@/components/layout/CustomerLayout";
-import { AdminLayout } from "@/components/layout/AdminLayout";
-import Home from "@/pages/Home";
-import Catalog from "@/pages/Catalog";
-import ProductDetail from "@/pages/ProductDetail";
-import Cart from "@/pages/Cart";
-import Checkout from "@/pages/Checkout";
-import OrderConfirmation from "@/pages/OrderConfirmation";
-import Search from "@/pages/Search";
-import Account from "@/pages/Account";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
-import AdminLogin from "@/pages/AdminLogin";
-import AdminDashboard from "@/pages/AdminDashboard";
-import AdminProducts from "@/pages/AdminProducts";
-import { AdminProductForm, AdminOrders, AdminOrderDetail } from "@/pages/Stubs";
-import { AdminCustomers, AdminInventory, AdminCoupons, AdminShipping, AdminClassifications, AdminContent, AdminReports, AdminEmployees } from "@/pages/AdminSections";
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
-import NotFound from "@/pages/not-found";
+
+const CustomerLayout = lazy(() => import("@/components/layout/CustomerLayout").then(module => ({ default: module.CustomerLayout })));
+const AdminLayout = lazy(() => import("@/components/layout/AdminLayout").then(module => ({ default: module.AdminLayout })));
+const Home = lazy(() => import("@/pages/Home"));
+const Catalog = lazy(() => import("@/pages/Catalog"));
+const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
+const Cart = lazy(() => import("@/pages/Cart"));
+const Checkout = lazy(() => import("@/pages/Checkout"));
+const OrderConfirmation = lazy(() => import("@/pages/OrderConfirmation"));
+const Search = lazy(() => import("@/pages/Search"));
+const Account = lazy(() => import("@/pages/Account"));
+const Login = lazy(() => import("@/pages/Login"));
+const Register = lazy(() => import("@/pages/Register"));
+const TrackOrder = lazy(() => import("@/pages/TrackOrder"));
+const OrderDetail = lazy(() => import("@/pages/OrderDetail"));
+const InformationPage = lazy(() => import("@/pages/InformationPage"));
+const OffersPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.OffersPage })));
+const PublishersPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.PublishersPage })));
+const CategoriesPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.CategoriesPage })));
+const StagesPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.StagesPage })));
+const AdminLogin = lazy(() => import("@/pages/AdminLogin"));
+const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
+const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
+const AdminProductForm = lazy(() => import("@/pages/Stubs").then(module => ({ default: module.AdminProductForm })));
+const AdminOrders = lazy(() => import("@/pages/Stubs").then(module => ({ default: module.AdminOrders })));
+const AdminOrderDetail = lazy(() => import("@/pages/Stubs").then(module => ({ default: module.AdminOrderDetail })));
+const AdminCustomers = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminCustomers })));
+const AdminInventory = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminInventory })));
+const AdminCoupons = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminCoupons })));
+const AdminShipping = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminShipping })));
+const AdminClassifications = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminClassifications })));
+const AdminContent = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminContent })));
+const AdminReports = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminReports })));
+const AdminEmployees = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminEmployees })));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 export function AppRouter() {
   return (
-    <Switch>
+    <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">جاري تحميل الصفحة...</div>}><Switch>
       {/* Admin: login (no layout) */}
       <Route path="/admin/login" component={AdminLogin} />
 
@@ -157,6 +175,13 @@ export function AppRouter() {
           </CustomerLayout>
         )}
       </Route>
+      <Route path="/orders/:id">{() => <CustomerLayout><OrderDetail /></CustomerLayout>}</Route>
+      <Route path="/track">{() => <CustomerLayout><TrackOrder /></CustomerLayout>}</Route>
+      <Route path="/offers">{() => <CustomerLayout><OffersPage /></CustomerLayout>}</Route>
+      <Route path="/publishers">{() => <CustomerLayout><PublishersPage /></CustomerLayout>}</Route>
+      <Route path="/categories">{() => <CustomerLayout><CategoriesPage /></CustomerLayout>}</Route>
+      <Route path="/stages">{() => <CustomerLayout><StagesPage /></CustomerLayout>}</Route>
+      {["/about", "/contact", "/faq", "/shipping-policy", "/return-policy", "/privacy", "/terms"].map(path => <Route key={path} path={path}>{() => <CustomerLayout><InformationPage /></CustomerLayout>}</Route>)}
       <Route>
         {() => (
           <CustomerLayout>
@@ -164,6 +189,6 @@ export function AppRouter() {
           </CustomerLayout>
         )}
       </Route>
-    </Switch>
+    </Switch></Suspense>
   );
 }

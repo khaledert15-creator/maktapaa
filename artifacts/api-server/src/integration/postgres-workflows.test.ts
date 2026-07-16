@@ -6,9 +6,12 @@ import { and, eq } from "drizzle-orm";
 import {
   auditLogsTable, citiesTable, db, governoratesTable, orderItemsTable, pool,
   ordersTable, productImagesTable, productsTable, stockMovementsTable, usersTable,
+  addressesTable, categoriesTable, customersTable, favoritesTable, gradesTable,
+  publishersTable, stagesTable, subjectsTable,
 } from "@workspace/db";
 import { calculateShipping } from "../services/shipping";
 import { imageStorage } from "../services/storage";
+import { enrichProductSummaries, getProductGallery } from "../services/catalog";
 
 const rollbackMarker = "ROLLBACK_POSTGRES_WORKFLOW_TEST";
 
@@ -102,5 +105,65 @@ test("PostgreSQL-backed catalog, shipping, order, inventory, permission and audi
     if (!(error instanceof Error) || error.message !== rollbackMarker) throw error;
   } finally {
     await Promise.all(storedKeys.map(key => imageStorage.deleteImage(key)));
+  }
+});
+
+test("public storefront records, primary images, favorites, addresses and checkout idempotency are PostgreSQL-backed", async () => {
+  const suffix = randomUUID();
+  const [publisher] = await db.select().from(publishersTable).limit(1);
+  const [stage] = await db.select().from(stagesTable).limit(1);
+  const [grade] = await db.select().from(gradesTable).limit(1);
+  const [subject] = await db.select().from(subjectsTable).limit(1);
+  const [category] = await db.select().from(categoriesTable).limit(1);
+  const [customer] = await db.select().from(customersTable).limit(1);
+  const [governorate] = await db.select().from(governoratesTable).limit(1);
+  assert.ok(publisher && stage && grade && subject && category && customer && governorate, "seeded storefront relations must exist");
+
+  let productId: number | undefined;
+  let addressId: number | undefined;
+  let orderId: number | undefined;
+  try {
+    const [product] = await db.insert(productsTable).values({
+      nameAr: `منتج واجهة ${suffix}`, slug: `storefront-${suffix}`, price: "140", oldPrice: "200",
+      stockQuantity: 7, status: "active", publisherId: publisher.id, stageId: stage.id,
+      gradeId: grade.id, subjectId: subject.id, categoryId: category.id,
+      isFeatured: true, isOffer: true, isRevision: true, freeShipping: true,
+      educationType: "لغات", schoolYear: "2026/2027", author: "مدرس الاختبار",
+    }).returning();
+    productId = product.id;
+    await db.insert(productImagesTable).values([
+      { productId, url: `/uploads/${suffix}-secondary.webp`, storageKey: `test/${suffix}/secondary.webp`, sortOrder: 0, isPrimary: false },
+      { productId, url: `/uploads/${suffix}-primary.webp`, storageKey: `test/${suffix}/primary.webp`, sortOrder: 1, isPrimary: true },
+    ]);
+    const [summary] = await enrichProductSummaries([product]);
+    assert.equal(summary.coverImage, `/uploads/${suffix}-primary.webp`, "admin-selected primary image is used publicly");
+    assert.equal(summary.publisher, publisher.nameAr);
+    assert.equal(summary.category, category.nameAr);
+    assert.equal(summary.freeShipping, true);
+    assert.equal(summary.isOffer, true);
+    assert.deepEqual(await getProductGallery(product), [`/uploads/${suffix}-primary.webp`, `/uploads/${suffix}-secondary.webp`], "gallery puts primary image first");
+
+    await db.update(productsTable).set({ price: "125", stockQuantity: 0 }).where(eq(productsTable.id, productId));
+    const [updatedProduct] = await db.select().from(productsTable).where(eq(productsTable.id, productId));
+    const [updatedSummary] = await enrichProductSummaries([updatedProduct]);
+    assert.equal(updatedSummary.price, 125, "admin price change is immediately reflected");
+    assert.equal(updatedSummary.inStock, false, "admin stock change is immediately reflected");
+
+    await db.insert(favoritesTable).values({ customerId: customer.id, productId }).onConflictDoNothing();
+    await db.insert(favoritesTable).values({ customerId: customer.id, productId }).onConflictDoNothing();
+    assert.equal((await db.select().from(favoritesTable).where(and(eq(favoritesTable.customerId, customer.id), eq(favoritesTable.productId, productId)))).length, 1, "favorites are unique and persistent");
+
+    const [savedAddress] = await db.insert(addressesTable).values({ customerId: customer.id, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان واجهة اختبار", isDefault: false }).returning();
+    addressId = savedAddress.id;
+    assert.equal(savedAddress.governorateName, governorate.nameAr, "saved address snapshots governorate name");
+
+    const checkoutToken = `checkout-${suffix}`;
+    const [savedOrder] = await db.insert(ordersTable).values({ checkoutToken, orderNumber: `MK-IDEM-${suffix}`, customerId: customer.id, customerName: customer.name, mobile: customer.mobile, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان اختبار", subtotal: "125", shippingCost: "0", total: "125" }).returning();
+    orderId = savedOrder.id;
+    await assert.rejects(() => db.insert(ordersTable).values({ checkoutToken, orderNumber: `MK-IDEM-DUP-${suffix}`, customerName: customer.name, mobile: customer.mobile, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان اختبار", subtotal: "125", shippingCost: "0", total: "125" }), "checkout token prevents duplicate orders at database level");
+  } finally {
+    if (orderId) await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
+    if (addressId) await db.delete(addressesTable).where(eq(addressesTable.id, addressId));
+    if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
   }
 });

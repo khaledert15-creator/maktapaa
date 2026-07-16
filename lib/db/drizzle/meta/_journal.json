@@ -15,6 +15,13 @@
       "when": 1784161636308,
       "tag": "0001_slimy_flatman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784220085563,
+      "tag": "0002_clever_matthew_murdock",
+      "breakpoints": true
     }
   ]
 }

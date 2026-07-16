@@ -8,6 +8,7 @@
 
 export interface Address {
   id: number;
+  governorateId?: number;
   governorate: string;
   city: string;
   detailedAddress: string;

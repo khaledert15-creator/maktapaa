@@ -25,5 +25,10 @@ export interface OrderInput {
   paymentMethod: OrderInputPaymentMethod;
   /** @nullable */
   couponCode?: string | null;
+  /**
+     * @minLength 12
+     * @maxLength 100
+     */
+  checkoutToken?: string;
   cartItems?: CartItemInput[];
 }

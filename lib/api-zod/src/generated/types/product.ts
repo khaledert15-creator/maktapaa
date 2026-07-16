@@ -33,6 +33,7 @@ export interface Product {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  isOffer?: boolean;
   freeShipping?: boolean;
   /** @nullable */
   freeShippingBadgeText?: string | null;
@@ -59,4 +60,8 @@ export interface Product {
   /** @nullable */
   avgRating?: number | null;
   reviewCount?: number;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
 }

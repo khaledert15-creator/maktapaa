@@ -5,6 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -43,9 +45,23 @@ export function AdminCustomers() {
 type ProductRow = { id: number; nameAr: string; sku?: string; coverImage?: string; stockQuantity: number; reservedQuantity?: number; minStockLevel?: number };
 export function AdminInventory() {
   const resource = useResource<{ items: ProductRow[] }>('/api/admin/products?limit=100'); const { toast } = useToast();
-  const adjust = async (product: ProductRow, delta: number) => { const reason = window.prompt('اكتب سبب حركة المخزون'); if (!reason) return; try { await api(`/api/admin/products/${product.id}/stock`, { method: 'PATCH', body: JSON.stringify({ quantity: Math.abs(delta), movementType: delta > 0 ? 'manual_increase' : 'manual_decrease', reason }) }); toast({ title: 'تم تسجيل حركة المخزون' }); await resource.reload(); } catch (error) { toast({ title: 'تعذر تعديل المخزون', description: String(error), variant: 'destructive' }); } };
+  const [adjustment, setAdjustment] = useState<{ product: ProductRow; direction: 'increase' | 'decrease' } | null>(null);
+  const [quantity, setQuantity] = useState('1');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const openAdjustment = (product: ProductRow, direction: 'increase' | 'decrease') => { setAdjustment({ product, direction }); setQuantity('1'); setReason(''); };
+  const saveAdjustment = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!adjustment || Number(quantity) < 1 || reason.trim().length < 3) return;
+    setSaving(true);
+    try {
+      await api(`/api/admin/products/${adjustment.product.id}/stock`, { method: 'PATCH', body: JSON.stringify({ quantity: Number(quantity), movementType: adjustment.direction === 'increase' ? 'manual_increase' : 'manual_decrease', reason: reason.trim() }) });
+      toast({ title: 'تم تسجيل حركة المخزون' }); setAdjustment(null); await resource.reload();
+    } catch (error) { toast({ title: 'تعذر تعديل المخزون', description: String(error), variant: 'destructive' }); }
+    finally { setSaving(false); }
+  };
   const rows = resource.data?.items || [];
-  return <section className="space-y-6"><h1 className="text-2xl font-bold">المخزون وحركاته</h1><PageState loading={resource.loading} error={resource.error} empty={!rows.length}><Card><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>SKU</TableHead><TableHead>الحالي</TableHead><TableHead>المحجوز</TableHead><TableHead>المتاح</TableHead><TableHead>الحالة</TableHead><TableHead>تعديل</TableHead></TableRow></TableHeader><TableBody>{rows.map(row => { const available = row.stockQuantity - (row.reservedQuantity || 0); return <TableRow key={row.id}><TableCell>{row.nameAr}</TableCell><TableCell>{row.sku || '-'}</TableCell><TableCell>{row.stockQuantity}</TableCell><TableCell>{row.reservedQuantity || 0}</TableCell><TableCell>{available}</TableCell><TableCell><Badge variant={available <= (row.minStockLevel || 0) ? 'destructive' : 'outline'}>{available === 0 ? 'نفد' : available <= (row.minStockLevel || 0) ? 'منخفض' : 'جيد'}</Badge></TableCell><TableCell className="space-x-2 space-x-reverse"><Button size="sm" onClick={() => void adjust(row, 1)}>زيادة</Button><Button size="sm" variant="outline" onClick={() => void adjust(row, -1)}>نقص</Button></TableCell></TableRow>; })}</TableBody></Table></Card></PageState></section>;
+  return <section className="space-y-6"><h1 className="text-2xl font-bold">المخزون وحركاته</h1><PageState loading={resource.loading} error={resource.error} empty={!rows.length}><Card><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>SKU</TableHead><TableHead>الحالي</TableHead><TableHead>المحجوز</TableHead><TableHead>المتاح</TableHead><TableHead>الحالة</TableHead><TableHead>تعديل</TableHead></TableRow></TableHeader><TableBody>{rows.map(row => { const available = row.stockQuantity - (row.reservedQuantity || 0); return <TableRow key={row.id}><TableCell>{row.nameAr}</TableCell><TableCell>{row.sku || '-'}</TableCell><TableCell>{row.stockQuantity}</TableCell><TableCell>{row.reservedQuantity || 0}</TableCell><TableCell>{available}</TableCell><TableCell><Badge variant={available <= (row.minStockLevel || 0) ? 'destructive' : 'outline'}>{available === 0 ? 'نفد' : available <= (row.minStockLevel || 0) ? 'منخفض' : 'جيد'}</Badge></TableCell><TableCell className="space-x-2 space-x-reverse"><Button size="sm" onClick={() => openAdjustment(row, 'increase')}>زيادة</Button><Button size="sm" variant="outline" onClick={() => openAdjustment(row, 'decrease')}>نقص</Button></TableCell></TableRow>; })}</TableBody></Table></Card></PageState><Dialog open={Boolean(adjustment)} onOpenChange={open => { if (!open) setAdjustment(null); }}><DialogContent><DialogHeader><DialogTitle>{adjustment?.direction === 'increase' ? 'زيادة' : 'خفض'} مخزون {adjustment?.product.nameAr}</DialogTitle></DialogHeader><form onSubmit={saveAdjustment} className="space-y-4"><div><Label htmlFor="stock-quantity" className="mb-2 block">الكمية</Label><Input id="stock-quantity" type="number" min="1" max={adjustment?.direction === 'decrease' ? adjustment.product.stockQuantity : undefined} value={quantity} onChange={event => setQuantity(event.target.value)} /></div><div><Label htmlFor="stock-reason" className="mb-2 block">سبب الحركة</Label><Textarea id="stock-reason" value={reason} onChange={event => setReason(event.target.value)} placeholder="مثال: جرد مخزون فعلي" required /></div><Button type="submit" className="w-full" disabled={saving || Number(quantity) < 1 || reason.trim().length < 3}>{saving ? 'جاري التسجيل...' : 'تسجيل حركة المخزون'}</Button></form></DialogContent></Dialog></section>;
 }
 
 type Coupon = { id: number; code: string; type: string; value: number; usedCount: number; maxUses?: number; isActive: boolean; startDate?: string; endDate?: string };

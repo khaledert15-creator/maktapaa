@@ -9,6 +9,11 @@ import {
   useAdminListOrders,
   useAdminUpdateOrderStatus,
   useAdminUpdateProduct,
+  useListCategories,
+  useListGrades,
+  useListPublishers,
+  useListStages,
+  useListSubjects,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -35,16 +40,20 @@ export function AdminProductForm() {
   const { data: product } = useAdminGetProduct(productId, {
     query: { queryKey: [`/api/admin/products/${productId}`], enabled: productId > 0 },
   });
-  const [form, setForm] = useState({ nameAr: '', nameEn: '', price: '', oldPrice: '', purchasePrice: '', sku: '', barcode: '', stockQuantity: '0', minStockLevel: '5', status: 'draft', descriptionShort: '', descriptionFull: '', author: '', schoolYear: '', bookType: '', internalNotes: '', freeShipping: false, freeShippingBadgeText: 'شحن مجاني', isFeatured: false, isBestSeller: false, isNew: false, seoTitle: '', seoDescription: '' });
+  const [form, setForm] = useState({ nameAr: '', nameEn: '', price: '', oldPrice: '', purchasePrice: '', sku: '', barcode: '', stockQuantity: '0', minStockLevel: '5', status: 'draft', descriptionShort: '', descriptionFull: '', author: '', schoolYear: '', bookType: '', edition: '', educationType: '', stageId: '', gradeId: '', subjectId: '', publisherId: '', categoryId: '', internalNotes: '', freeShipping: false, freeShippingBadgeText: 'شحن مجاني', isFeatured: false, isBestSeller: false, isNew: false, isOffer: false, isRevision: false, isBundle: false, seoTitle: '', seoDescription: '' });
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const { data: stages } = useListStages();
+  const { data: grades } = useListGrades(form.stageId ? { stageId: Number(form.stageId) } : undefined);
+  const { data: subjects } = useListSubjects();
+  const { data: publishers } = useListPublishers();
+  const { data: categories } = useListCategories();
 
   useEffect(() => {
     if (product) {
-      const extended = product as typeof product & { purchasePrice?: number | null; author?: string | null; freeShipping?: boolean; freeShippingBadgeText?: string | null; seoTitle?: string | null; seoDescription?: string | null; isOffer?: boolean };
       setForm({
-      nameAr: product.nameAr, nameEn: product.nameEn || '', price: String(product.price), oldPrice: product.oldPrice ? String(product.oldPrice) : '', purchasePrice: extended.purchasePrice ? String(extended.purchasePrice) : '', sku: product.sku || '', barcode: product.barcode || '',
+      nameAr: product.nameAr, nameEn: product.nameEn || '', price: String(product.price), oldPrice: product.oldPrice ? String(product.oldPrice) : '', purchasePrice: product.purchasePrice ? String(product.purchasePrice) : '', sku: product.sku || '', barcode: product.barcode || '',
       stockQuantity: String(product.stockQuantity), minStockLevel: String(product.minStockLevel || 5),
-      status: product.status, descriptionShort: product.descriptionShort || '', descriptionFull: product.descriptionFull || '', author: extended.author || '', schoolYear: product.schoolYear || '', bookType: product.bookType || '', internalNotes: product.internalNotes || '', freeShipping: extended.freeShipping || false, freeShippingBadgeText: extended.freeShippingBadgeText || 'شحن مجاني', isFeatured: product.isFeatured || false, isBestSeller: product.isBestSeller || false, isNew: product.isNew || false, seoTitle: extended.seoTitle || '', seoDescription: extended.seoDescription || '',
+      status: product.status, descriptionShort: product.descriptionShort || '', descriptionFull: product.descriptionFull || '', author: product.author || '', schoolYear: product.schoolYear || '', bookType: product.bookType || '', edition: product.edition || '', educationType: product.educationType || '', stageId: product.stageId ? String(product.stageId) : '', gradeId: product.gradeId ? String(product.gradeId) : '', subjectId: product.subjectId ? String(product.subjectId) : '', publisherId: product.publisherId ? String(product.publisherId) : '', categoryId: product.categoryId ? String(product.categoryId) : '', internalNotes: product.internalNotes || '', freeShipping: product.freeShipping || false, freeShippingBadgeText: product.freeShippingBadgeText || 'شحن مجاني', isFeatured: product.isFeatured || false, isBestSeller: product.isBestSeller || false, isNew: product.isNew || false, isOffer: product.isOffer || false, isRevision: product.isRevision || false, isBundle: product.isBundle || false, seoTitle: product.seoTitle || '', seoDescription: product.seoDescription || '',
     }); }
   }, [product]);
 
@@ -80,6 +89,11 @@ export function AdminProductForm() {
       isFeatured: form.isFeatured, isBestSeller: form.isBestSeller, isNew: form.isNew,
       internalNotes: form.internalNotes || undefined,
       purchasePrice: Number(form.purchasePrice) || undefined, author: form.author || undefined,
+      stageId: Number(form.stageId) || undefined, gradeId: Number(form.gradeId) || undefined,
+      subjectId: Number(form.subjectId) || undefined, publisherId: Number(form.publisherId) || undefined,
+      categoryId: Number(form.categoryId) || undefined, educationType: form.educationType || undefined,
+      edition: form.edition || undefined,
+      isOffer: form.isOffer, isRevision: form.isRevision, isBundle: form.isBundle,
       freeShipping: form.freeShipping, freeShippingBadgeText: form.freeShipping ? form.freeShippingBadgeText : undefined,
       seoTitle: form.seoTitle || undefined, seoDescription: form.seoDescription || undefined,
     };
@@ -98,18 +112,25 @@ export function AdminProductForm() {
       <label className="space-y-2 md:col-span-2"><span>الوصف الكامل</span><Textarea rows={6} value={form.descriptionFull} onChange={e => setForm(v => ({ ...v, descriptionFull: e.target.value }))} /></label>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>2. التصنيف والأسعار</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <AdminProductSelect label="المرحلة الدراسية" value={form.stageId} items={stages} onChange={stageId => setForm(v => ({ ...v, stageId, gradeId: '' }))} />
+      <AdminProductSelect label="الصف الدراسي" value={form.gradeId} items={grades} onChange={gradeId => setForm(v => ({ ...v, gradeId }))} />
+      <AdminProductSelect label="المادة" value={form.subjectId} items={subjects} onChange={subjectId => setForm(v => ({ ...v, subjectId }))} />
+      <AdminProductSelect label="دار النشر" value={form.publisherId} items={publishers} onChange={publisherId => setForm(v => ({ ...v, publisherId }))} />
+      <AdminProductSelect label="التصنيف" value={form.categoryId} items={categories} onChange={categoryId => setForm(v => ({ ...v, categoryId }))} />
+      <label className="space-y-2"><span>نوع التعليم</span><Select value={form.educationType || 'none'} onValueChange={educationType => setForm(v => ({ ...v, educationType: educationType === 'none' ? '' : educationType }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">غير محدد</SelectItem><SelectItem value="عربي">عربي</SelectItem><SelectItem value="لغات">لغات</SelectItem><SelectItem value="أزهر">أزهر</SelectItem></SelectContent></Select></label>
       <label className="space-y-2"><span>السعر بالجنيه *</span><Input type="number" min="0.01" step="0.01" value={form.price} onChange={e => setForm(v => ({ ...v, price: e.target.value }))} /></label>
       <label className="space-y-2"><span>السعر القديم</span><Input type="number" min="0" value={form.oldPrice} onChange={e => setForm(v => ({ ...v, oldPrice: e.target.value }))} /></label>
       <label className="space-y-2"><span>سعر الشراء</span><Input type="number" min="0" value={form.purchasePrice} onChange={e => setForm(v => ({ ...v, purchasePrice: e.target.value }))} /></label>
       <label className="space-y-2"><span>المؤلف أو المدرس</span><Input value={form.author} onChange={e => setForm(v => ({ ...v, author: e.target.value }))} /></label>
       <label className="space-y-2"><span>السنة الدراسية</span><Input value={form.schoolYear} onChange={e => setForm(v => ({ ...v, schoolYear: e.target.value }))} /></label>
       <label className="space-y-2"><span>نوع الكتاب</span><Input value={form.bookType} onChange={e => setForm(v => ({ ...v, bookType: e.target.value }))} /></label>
+      <label className="space-y-2"><span>الطبعة</span><Input value={form.edition} onChange={e => setForm(v => ({ ...v, edition: e.target.value }))} /></label>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>3. المخزون والنشر</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
       {!productId && <label className="space-y-2"><span>المخزون الافتتاحي</span><Input type="number" min="0" value={form.stockQuantity} onChange={e => setForm(v => ({ ...v, stockQuantity: e.target.value }))} /></label>}
       <label className="space-y-2"><span>حد تنبيه المخزون</span><Input type="number" min="0" value={form.minStockLevel} onChange={e => setForm(v => ({ ...v, minStockLevel: e.target.value }))} /></label>
       <label className="space-y-2"><span>الحالة</span><Select value={form.status} onValueChange={status => setForm(v => ({ ...v, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">مسودة</SelectItem><SelectItem value="active">نشط</SelectItem><SelectItem value="archived">مؤرشف</SelectItem></SelectContent></Select></label>
-      <div className="md:col-span-2 flex flex-wrap gap-5">{[['isFeatured','منتج مميز'],['isBestSeller','الأكثر مبيعًا'],['isNew','منتج جديد']].map(([key,label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={Boolean(form[key as keyof typeof form])} onChange={e => setForm(v => ({ ...v, [key]: e.target.checked }))}/>{label}</label>)}</div>
+      <div className="md:col-span-2 flex flex-wrap gap-5">{[['isFeatured','منتج مميز'],['isBestSeller','الأكثر مبيعًا'],['isNew','منتج جديد'],['isOffer','عرض'],['isRevision','كتاب مراجعة'],['isBundle','باقة كتب']].map(([key,label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={Boolean(form[key as keyof typeof form])} onChange={e => setForm(v => ({ ...v, [key]: e.target.checked }))}/>{label}</label>)}</div>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>4. الصور</CardTitle></CardHeader><CardContent className="space-y-4">
       <Input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={e => setImageFiles(Array.from(e.target.files || []))} />
@@ -127,6 +148,10 @@ export function AdminProductForm() {
     </CardContent></Card>
     <div className="flex gap-3"><Button type="submit" disabled={create.isPending || update.isPending}>{create.isPending || update.isPending ? 'جاري الحفظ...' : form.status === 'draft' ? 'حفظ كمسودة' : 'حفظ ونشر'}</Button><Button type="button" variant="outline" onClick={() => navigate('/admin/products')}>إلغاء</Button></div>
   </form>;
+}
+
+function AdminProductSelect({ label, value, items, onChange }: { label: string; value: string; items?: { id: number; nameAr: string }[]; onChange: (value: string) => void }) {
+  return <label className="space-y-2"><span>{label}</span><Select value={value || 'none'} onValueChange={next => onChange(next === 'none' ? '' : next)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">غير محدد</SelectItem>{items?.map(item => <SelectItem key={item.id} value={String(item.id)}>{item.nameAr}</SelectItem>)}</SelectContent></Select></label>;
 }
 
 export function AdminOrders() {

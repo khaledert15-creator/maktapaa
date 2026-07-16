@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, couponsTable, customersTable, stockMovementsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, couponsTable, customersTable, stockMovementsTable, favoritesTable, addressesTable } from "@workspace/db";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { calculateShipping } from "../services/shipping";
+import { enrichProductSummaries } from "../services/catalog";
 
 const router: IRouter = Router();
 
@@ -24,6 +25,12 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
     deliveryNotes: order.deliveryNotes, orderNotes: order.orderNotes,
     subtotal: Number(order.subtotal), discount: Number(order.discount),
     couponDiscount: Number(order.couponDiscount), shippingCost: Number(order.shippingCost),
+    couponCode: order.couponCode,
+    shippingBaseCost: Number(order.shippingBaseCost),
+    shippingSurcharge: Number(order.shippingSurcharge),
+    shippingDiscount: Number(order.shippingDiscount),
+    freeShippingReason: order.freeShippingReason,
+    shippingRuleSnapshot: order.shippingRuleSnapshot,
     total: Number(order.total), estimatedDeliveryDate: order.estimatedDeliveryDate,
     trackingNumber: order.trackingNumber, shippingCompany: order.shippingCompany,
     items: items.map(i => ({
@@ -40,7 +47,7 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
 router.post("/orders", async (req, res): Promise<void> => {
   const {
     customerName, mobile, altMobile, governorateId, city, detailedAddress,
-    landmark, deliveryNotes, orderNotes, paymentMethod, couponCode,
+    landmark, deliveryNotes, orderNotes, paymentMethod, couponCode, checkoutToken,
   } = req.body;
   const cartItems = Array.isArray(req.body.cartItems) ? req.body.cartItems : req.session.cart?.items;
 
@@ -52,6 +59,23 @@ router.post("/orders", async (req, res): Promise<void> => {
   if (!customerName || !mobile || !governorateId || !city || !detailedAddress) {
     res.status(400).json({ error: "البيانات المطلوبة ناقصة" });
     return;
+  }
+
+  if (checkoutToken && (typeof checkoutToken !== "string" || checkoutToken.length < 12 || checkoutToken.length > 100)) {
+    res.status(400).json({ error: "رمز تأكيد الطلب غير صحيح" });
+    return;
+  }
+
+  if (checkoutToken) {
+    const [existingOrder] = await db.select().from(ordersTable).where(eq(ordersTable.checkoutToken, checkoutToken));
+    if (existingOrder) {
+      const [items, history] = await Promise.all([
+        db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, existingOrder.id)),
+        db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, existingOrder.id)),
+      ]);
+      res.json(mapOrder(existingOrder, items, history));
+      return;
+    }
   }
 
   if (!Array.isArray(cartItems) || cartItems.length === 0) {
@@ -122,7 +146,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         await tx.update(couponsTable).set({ usedCount: sql`${couponsTable.usedCount} + 1` }).where(eq(couponsTable.id, appliedCouponId));
       }
       const [createdOrder] = await tx.insert(ordersTable).values({
-        orderNumber, customerId, customerName, mobile, altMobile: altMobile || null,
+        orderNumber, checkoutToken: checkoutToken || null, customerId, customerName, mobile, altMobile: altMobile || null,
         governorateId: gov.id, governorateName: gov.nameAr,
         city, detailedAddress, landmark: landmark || null,
         deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
@@ -164,8 +188,10 @@ router.post("/orders", async (req, res): Promise<void> => {
     throw error;
   }
 
-  // Clear cart
+  // Clear cart only after the transaction completed successfully and keep the
+  // confirmation reference in the signed session for guest checkout.
   delete (req.session).cart;
+  req.session.lastOrderNumber = order.orderNumber;
 
   const [items, history] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id)),
@@ -173,6 +199,24 @@ router.post("/orders", async (req, res): Promise<void> => {
   ]);
 
   res.status(201).json(mapOrder(order, items, history));
+});
+
+// Guest customers can only reopen the order just created in the same signed
+// session. Signed-in customers can reopen any of their own orders.
+router.get("/orders/confirmation/:orderNumber", async (req, res): Promise<void> => {
+  const orderNumber = Array.isArray(req.params.orderNumber) ? req.params.orderNumber[0] : req.params.orderNumber;
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.orderNumber, orderNumber));
+  const ownsOrder = order && req.session.customerId && order.customerId === req.session.customerId;
+  const isRecentGuestOrder = order && req.session.lastOrderNumber === order.orderNumber;
+  if (!order || (!ownsOrder && !isRecentGuestOrder)) {
+    res.status(404).json({ error: "الطلب غير موجود" });
+    return;
+  }
+  const [items, history] = await Promise.all([
+    db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id)),
+    db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, order.id)).orderBy(desc(orderStatusHistoryTable.createdAt)),
+  ]);
+  res.json(mapOrder(order, items, history));
 });
 
 // Track order by number + mobile
@@ -309,30 +353,126 @@ router.patch("/customers/me/profile", async (req, res): Promise<void> => {
 
 // Favorites
 router.get("/customers/me/favorites", async (req, res): Promise<void> => {
-  
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  res.json([]);
+  const rows = await db.select({ product: productsTable })
+    .from(favoritesTable)
+    .innerJoin(productsTable, eq(favoritesTable.productId, productsTable.id))
+    .where(and(eq(favoritesTable.customerId, req.session.customerId), eq(productsTable.status, "active")))
+    .orderBy(desc(favoritesTable.createdAt));
+  res.json(await enrichProductSummaries(rows.map(row => row.product)));
 });
 
 router.post("/customers/me/favorites/:productId", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId;
+  const productId = Number(raw);
+  const [product] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.status, "active")));
+  if (!product) { res.status(404).json({ error: "المنتج غير موجود" }); return; }
+  await db.insert(favoritesTable).values({ customerId: req.session.customerId, productId }).onConflictDoNothing();
   res.sendStatus(204);
 });
 
 router.delete("/customers/me/favorites/:productId", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId;
+  await db.delete(favoritesTable).where(and(
+    eq(favoritesTable.customerId, req.session.customerId),
+    eq(favoritesTable.productId, Number(raw)),
+  ));
   res.sendStatus(204);
 });
 
 // Addresses
 router.get("/customers/me/addresses", async (req, res): Promise<void> => {
-  
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  res.json([]);
+  const rows = await db.select().from(addressesTable)
+    .where(eq(addressesTable.customerId, req.session.customerId))
+    .orderBy(desc(addressesTable.isDefault), desc(addressesTable.createdAt));
+  res.json(rows.map(address => ({
+    id: address.id,
+    governorateId: address.governorateId,
+    governorate: address.governorateName,
+    city: address.city,
+    detailedAddress: address.detailedAddress,
+    landmark: address.landmark,
+    isDefault: address.isDefault,
+  })));
 });
 
 router.post("/customers/me/addresses", async (req, res): Promise<void> => {
-  
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  res.status(201).json({ id: 1, governorate: "", city: req.body.city, detailedAddress: req.body.detailedAddress, landmark: null, isDefault: false });
+  const { governorateId, city, detailedAddress, landmark, isDefault } = req.body;
+  if (!Number.isInteger(governorateId) || !city?.trim() || !detailedAddress?.trim()) {
+    res.status(400).json({ error: "بيانات العنوان المطلوبة ناقصة" });
+    return;
+  }
+  const [governorate] = await db.select().from(governoratesTable)
+    .where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
+  if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
+
+  const created = await db.transaction(async tx => {
+    const [firstAddress] = await tx.select({ id: addressesTable.id }).from(addressesTable)
+      .where(eq(addressesTable.customerId, req.session.customerId!)).limit(1);
+    const makeDefault = Boolean(isDefault) || !firstAddress;
+    if (makeDefault) {
+      await tx.update(addressesTable).set({ isDefault: false })
+        .where(eq(addressesTable.customerId, req.session.customerId!));
+    }
+    const [address] = await tx.insert(addressesTable).values({
+      customerId: req.session.customerId!,
+      governorateId,
+      governorateName: governorate.nameAr,
+      city: city.trim(),
+      detailedAddress: detailedAddress.trim(),
+      landmark: landmark?.trim() || null,
+      isDefault: makeDefault,
+    }).returning();
+    return address;
+  });
+  res.status(201).json({ id: created.id, governorateId: created.governorateId, governorate: created.governorateName, city: created.city, detailedAddress: created.detailedAddress, landmark: created.landmark, isDefault: created.isDefault });
+});
+
+router.patch("/customers/me/addresses/:id", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(raw);
+  const [existing] = await db.select().from(addressesTable).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId)));
+  if (!existing) { res.status(404).json({ error: "العنوان غير موجود" }); return; }
+
+  const governorateId = req.body.governorateId ?? existing.governorateId;
+  const [governorate] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
+  if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
+  const updated = await db.transaction(async tx => {
+    if (req.body.isDefault) {
+      await tx.update(addressesTable).set({ isDefault: false }).where(eq(addressesTable.customerId, req.session.customerId!));
+    }
+    const [address] = await tx.update(addressesTable).set({
+      governorateId,
+      governorateName: governorate.nameAr,
+      city: req.body.city?.trim() || existing.city,
+      detailedAddress: req.body.detailedAddress?.trim() || existing.detailedAddress,
+      landmark: req.body.landmark === undefined ? existing.landmark : req.body.landmark?.trim() || null,
+      isDefault: req.body.isDefault === undefined ? existing.isDefault : Boolean(req.body.isDefault),
+    }).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId!))).returning();
+    return address;
+  });
+  res.json({ id: updated.id, governorateId: updated.governorateId, governorate: updated.governorateName, city: updated.city, detailedAddress: updated.detailedAddress, landmark: updated.landmark, isDefault: updated.isDefault });
+});
+
+router.delete("/customers/me/addresses/:id", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(raw);
+  await db.transaction(async tx => {
+    const [removed] = await tx.delete(addressesTable).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId!))).returning();
+    if (removed?.isDefault) {
+      const [next] = await tx.select({ id: addressesTable.id }).from(addressesTable)
+        .where(eq(addressesTable.customerId, req.session.customerId!)).orderBy(desc(addressesTable.createdAt)).limit(1);
+      if (next) await tx.update(addressesTable).set({ isDefault: true }).where(eq(addressesTable.id, next.id));
+    }
+  });
+  res.sendStatus(204);
 });
 
 export default router;
