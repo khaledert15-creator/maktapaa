@@ -21,6 +21,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const ADMIN_PREVIEW_KEY = 'maktaba-admin-preview';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -31,6 +32,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const loadAuth = async () => {
+      if (import.meta.env.DEV && sessionStorage.getItem(ADMIN_PREVIEW_KEY) === 'enabled') {
+        setAdmin({
+          id: 0,
+          name: 'مدير المعاينة',
+          email: 'admin@maktaba.com',
+          role: 'owner',
+          permissions: [],
+        });
+        setIsAdminAuthLoaded(true);
+      }
       const [customerResult, adminResult] = await Promise.allSettled([
         getCurrentCustomer(),
         getCurrentAdmin(),
@@ -50,9 +61,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const handleLogoutAdmin = async () => {
+    sessionStorage.removeItem(ADMIN_PREVIEW_KEY);
     await logoutAdmin().catch(() => undefined);
     setAdmin(null);
     queryClient.clear();
+  };
+
+  const handleSetAdmin = (nextAdmin: AdminUser | null) => {
+    setAdmin(nextAdmin);
+    if (import.meta.env.DEV && nextAdmin?.id === 0) {
+      sessionStorage.setItem(ADMIN_PREVIEW_KEY, 'enabled');
+    }
   };
 
   return (
@@ -61,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         customer,
         admin,
         setCustomer,
-        setAdmin,
+        setAdmin: handleSetAdmin,
         isCustomerAuthLoaded,
         isAdminAuthLoaded,
         logoutCustomer: handleLogoutCustomer,

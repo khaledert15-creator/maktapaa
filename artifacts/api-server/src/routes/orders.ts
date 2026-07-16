@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, couponsTable, customersTable, stockMovementsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, couponsTable, customersTable, stockMovementsTable } from "@workspace/db";
 import { eq, and, desc, sql } from "drizzle-orm";
+import { calculateShipping } from "../services/shipping";
 
 const router: IRouter = Router();
 
@@ -39,8 +40,9 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
 router.post("/orders", async (req, res): Promise<void> => {
   const {
     customerName, mobile, altMobile, governorateId, city, detailedAddress,
-    landmark, deliveryNotes, orderNotes, paymentMethod, couponCode, cartItems,
+    landmark, deliveryNotes, orderNotes, paymentMethod, couponCode,
   } = req.body;
+  const cartItems = Array.isArray(req.body.cartItems) ? req.body.cartItems : req.session.cart?.items;
 
   if (paymentMethod && paymentMethod !== "cash_on_delivery") {
     res.status(400).json({ error: "الدفع عند الاستلام هو وسيلة الدفع المتاحة حاليًا" });
@@ -81,8 +83,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     resolvedItems.push({ product, quantity: ci.quantity });
   }
 
-  let shippingCost = Number(gov.shippingCost);
-  if (gov.freeShippingThreshold && subtotal >= Number(gov.freeShippingThreshold)) shippingCost = 0;
+  let freeShippingCoupon = false;
 
   let couponDiscount = 0;
   if (couponCode) {
@@ -90,10 +91,22 @@ router.post("/orders", async (req, res): Promise<void> => {
     if (coupon && coupon.isActive) {
       if (coupon.type === "percentage") couponDiscount = subtotal * (Number(coupon.value) / 100);
       else if (coupon.type === "fixed") couponDiscount = Math.min(Number(coupon.value), subtotal);
-      else if (coupon.type === "free_shipping") shippingCost = 0;
+      else if (coupon.type === "free_shipping") freeShippingCoupon = true;
       await db.update(couponsTable).set({ usedCount: sql`${couponsTable.usedCount} + 1` }).where(eq(couponsTable.id, coupon.id));
     }
   }
+
+  const [matchedCity] = await db.select().from(citiesTable).where(and(eq(citiesTable.governorateId, gov.id), eq(citiesTable.nameAr, city), eq(citiesTable.isActive, true)));
+  const shipping = calculateShipping({
+    products: resolvedItems.map(({ product, quantity }) => ({ price: Number(product.price), quantity, freeShipping: product.freeShipping, freeShippingStartAt: product.freeShippingStartAt, freeShippingEndAt: product.freeShippingEndAt })),
+    subtotal,
+    baseShippingCost: Number(gov.shippingCost),
+    governorateThreshold: gov.freeShippingThreshold ? Number(gov.freeShippingThreshold) : null,
+    cityPriceOverride: matchedCity?.shippingPriceOverride ? Number(matchedCity.shippingPriceOverride) : null,
+    surcharge: matchedCity ? Number(matchedCity.surcharge) : Number(gov.remoteAreaSurcharge),
+    freeShippingCoupon,
+  });
+  const shippingCost = shipping.finalCost;
 
   const total = Math.max(0, subtotal - couponDiscount + shippingCost);
   const orderNumber = generateOrderNumber();
@@ -110,6 +123,9 @@ router.post("/orders", async (req, res): Promise<void> => {
     paymentStatus: "cash_on_delivery",
     subtotal: String(subtotal), discount: "0", couponDiscount: String(couponDiscount),
     couponCode: couponCode || null, shippingCost: String(shippingCost),
+    shippingBaseCost: String(shipping.baseCost), shippingSurcharge: String(shipping.surcharge),
+    shippingDiscount: String(shipping.discount), freeShippingReason: shipping.freeShippingReason,
+    shippingRuleSnapshot: { rule: shipping.rule, governorateId: gov.id, governorateName: gov.nameAr, city, cityId: matchedCity?.id ?? null, calculatedAt: new Date().toISOString() },
     total: String(total), status: "new",
   }).returning();
 

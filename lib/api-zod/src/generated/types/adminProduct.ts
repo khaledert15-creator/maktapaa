@@ -40,6 +40,8 @@ export interface AdminProduct {
   /** @nullable */
   publisherId?: number | null;
   /** @nullable */
+  categoryId?: number | null;
+  /** @nullable */
   educationType?: string | null;
   /** @nullable */
   bookType?: string | null;
@@ -52,6 +54,18 @@ export interface AdminProduct {
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingStartAt?: Date | null;
+  /** @nullable */
+  freeShippingEndAt?: Date | null;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
   sortOrder?: number;
   /** @nullable */
   internalNotes?: string | null;

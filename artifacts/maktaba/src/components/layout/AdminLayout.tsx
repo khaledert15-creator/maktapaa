@@ -11,7 +11,9 @@ import {
   LogOut,
   Menu,
   X,
-  FileText
+  FileText,
+  PanelRightClose,
+  PanelRightOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,6 +22,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { admin, isAdminAuthLoaded, logoutAdmin } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     if (isAdminAuthLoaded && !admin) setLocation('/admin/login');
@@ -55,14 +58,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
       {/* Sidebar */}
       <aside 
-        className={`fixed inset-y-0 right-0 z-50 w-64 bg-sidebar border-l border-sidebar-border transform transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0 ${
+        className={`fixed inset-y-0 right-0 z-50 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'} w-64 bg-sidebar border-l border-sidebar-border transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 ${
           isSidebarOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <div className="h-full flex flex-col">
           <div className="h-16 flex items-center justify-between px-6 border-b border-sidebar-border">
-            <Link href="/admin" className="text-xl font-bold text-sidebar-foreground">
-              مكتبة دوت كوم | الإدارة
+            <Link href="/admin" className="text-xl font-bold text-sidebar-foreground overflow-hidden whitespace-nowrap">
+              {isCollapsed ? 'م' : 'مكتبة دوت كوم | الإدارة'}
             </Link>
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsSidebarOpen(false)}>
               <X className="h-5 w-5" />
@@ -84,7 +87,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                   }`}
                 >
                   <item.icon className="h-5 w-5" />
-                  {item.name}
+                  {!isCollapsed && item.name}
                 </Link>
               );
             })}
@@ -95,18 +98,18 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
                 {admin?.name?.charAt(0) || "م"}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className={`flex-1 min-w-0 ${isCollapsed ? 'hidden' : ''}`}>
                 <p className="text-sm font-medium text-sidebar-foreground truncate">{admin?.name}</p>
                 <p className="text-xs text-sidebar-foreground/60 truncate">{admin?.role}</p>
               </div>
             </div>
-            <Button 
+            <Button
               variant="outline" 
               className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={logoutAdmin}
             >
               <LogOut className="h-4 w-4 ml-2" />
-              تسجيل الخروج
+              {!isCollapsed && 'تسجيل الخروج'}
             </Button>
           </div>
         </div>
@@ -117,6 +120,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         <header className="h-16 bg-background border-b flex items-center px-4 lg:px-8 shrink-0">
           <Button variant="ghost" size="icon" className="lg:hidden ml-4" onClick={() => setIsSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="hidden lg:inline-flex" onClick={() => setIsCollapsed(value => !value)} aria-label={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'}>
+            {isCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />}
           </Button>
           <div className="flex-1" />
           <Button variant="outline" size="sm" asChild>

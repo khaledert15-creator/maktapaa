@@ -16,6 +16,7 @@ export interface AdminProductInput {
   images?: string[];
   price: number;
   oldPrice?: number;
+  purchasePrice?: number;
   sku?: string;
   barcode?: string;
   status?: AdminProductInputStatus;
@@ -25,6 +26,8 @@ export interface AdminProductInput {
   gradeId?: number;
   subjectId?: number;
   publisherId?: number;
+  categoryId?: number;
+  author?: string;
   educationType?: string;
   bookType?: string;
   edition?: string;
@@ -34,5 +37,12 @@ export interface AdminProductInput {
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  freeShippingStartAt?: Date;
+  freeShippingEndAt?: Date;
+  freeShippingBadgeText?: string;
+  seoTitle?: string;
+  seoDescription?: string;
   internalNotes?: string;
 }

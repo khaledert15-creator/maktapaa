@@ -121,6 +121,7 @@ export default function ProductDetail() {
           {product.nameEn && (
             <h2 className="text-lg text-muted-foreground mb-6" dir="ltr">{product.nameEn}</h2>
           )}
+          {product.freeShipping && <Badge className="mb-5 w-fit bg-emerald-600 text-white text-sm">{product.freeShippingBadgeText || 'شحن مجاني'}</Badge>}
 
           <div className="flex items-center gap-4 mb-8 pb-8 border-b">
             <span className="text-4xl font-black text-primary">{product.price} ج.م</span>

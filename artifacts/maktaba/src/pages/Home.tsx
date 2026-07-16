@@ -144,6 +144,7 @@ export default function Home() {
                         خصم {product.discountPercent}%
                       </Badge>
                     )}
+                    {product.freeShipping && <Badge className="absolute bottom-2 right-2 bg-emerald-600 text-white">{product.freeShippingBadgeText || 'شحن مجاني'}</Badge>}
                   </div>
                   <CardContent className="p-4">
                     <div className="text-xs text-muted-foreground mb-1">{product.publisher || 'ناشر غير معروف'}</div>

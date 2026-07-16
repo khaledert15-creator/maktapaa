@@ -19,6 +19,7 @@ export default function AdminProducts() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -48,6 +49,19 @@ export default function AdminProducts() {
     }
   };
 
+  const runBulk = async (action: 'active' | 'draft' | 'archive') => {
+    if (!selected.size) return;
+    if (action === 'archive' && !confirm(`أرشفة ${selected.size} منتج؟`)) return;
+    await Promise.all([...selected].map(id => fetch(`/api/admin/products/${id}`, {
+      method: action === 'archive' ? 'DELETE' : 'PATCH', credentials: 'include',
+      headers: action === 'archive' ? undefined : { 'content-type': 'application/json' },
+      body: action === 'archive' ? undefined : JSON.stringify({ status: action }),
+    })));
+    setSelected(new Set());
+    toast({ title: 'تم تنفيذ الإجراء الجماعي' });
+    queryClient.invalidateQueries({ queryKey: ['/api/admin/products'] });
+  };
+
   const getStatusBadge = (status: string) => {
     switch(status) {
       case 'active': return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">نشط</Badge>;
@@ -73,6 +87,8 @@ export default function AdminProducts() {
           </Link>
         </Button>
       </div>
+
+      {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-3"><strong>تم تحديد {selected.size}</strong><Button size="sm" onClick={() => void runBulk('active')}>تفعيل</Button><Button size="sm" variant="outline" onClick={() => void runBulk('draft')}>تحويل لمسودة</Button><Button size="sm" variant="destructive" onClick={() => void runBulk('archive')}>أرشفة</Button></div>}
 
       <div className="bg-card border rounded-lg p-4 flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
@@ -106,11 +122,13 @@ export default function AdminProducts() {
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
+              <TableHead className="w-10"><input type="checkbox" aria-label="تحديد كل المنتجات" onChange={event => setSelected(event.target.checked ? new Set(productsData?.items.map(item => item.id) || []) : new Set())} /></TableHead>
               <TableHead className="w-[80px]">صورة</TableHead>
               <TableHead>اسم الكتاب</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>السعر</TableHead>
               <TableHead>المخزون</TableHead>
+              <TableHead>الشحن</TableHead>
               <TableHead>الحالة</TableHead>
               <TableHead className="text-left">إجراءات</TableHead>
             </TableRow>
@@ -130,13 +148,14 @@ export default function AdminProducts() {
               ))
             ) : productsData?.items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                   لا توجد منتجات تطابق بحثك
                 </TableCell>
               </TableRow>
             ) : (
               productsData?.items.map((product) => (
                 <TableRow key={product.id}>
+                  <TableCell><input type="checkbox" checked={selected.has(product.id)} onChange={event => setSelected(current => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} /></TableCell>
                   <TableCell>
                     <div className="h-12 w-10 bg-muted rounded overflow-hidden">
                       {product.coverImage ? (
@@ -146,6 +165,7 @@ export default function AdminProducts() {
                       )}
                     </div>
                   </TableCell>
+                  <TableCell>{(product as typeof product & { freeShipping?: boolean }).freeShipping ? <Badge className="bg-emerald-100 text-emerald-800">مجاني</Badge> : <span className="text-muted-foreground">عادي</span>}</TableCell>
                   <TableCell className="font-medium max-w-[200px] truncate" title={product.nameAr}>
                     {product.nameAr}
                   </TableCell>

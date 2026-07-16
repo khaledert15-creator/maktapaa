@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, productsTable, governoratesTable, couponsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { calculateShipping } from "../services/shipping";
 
 const router: IRouter = Router();
 
@@ -55,33 +56,47 @@ async function buildCartResponse(cart: CartSession) {
       oldPrice: p.oldPrice ? Number(p.oldPrice) : null,
       subtotal: itemSubtotal, inStock: p.stockQuantity > 0,
       stockQuantity: p.stockQuantity,
+      freeShipping: p.freeShipping,
+      freeShippingBadgeText: p.freeShippingBadgeText,
     };
   }).filter(Boolean);
 
-  let shippingCost = 0;
+  let governorate: typeof governoratesTable.$inferSelect | undefined;
   if (cart.governorateId) {
     const [gov] = await db.select().from(governoratesTable).where(eq(governoratesTable.id, cart.governorateId));
-    if (gov) {
-      shippingCost = gov.freeShippingThreshold && subtotal >= Number(gov.freeShippingThreshold)
-        ? 0 : Number(gov.shippingCost);
-    }
+    governorate = gov;
   }
 
   let couponDiscount = 0;
+  let freeShippingCoupon = false;
   if (cart.couponCode) {
     const [coupon] = await db.select().from(couponsTable).where(eq(couponsTable.code, cart.couponCode));
     if (coupon && coupon.isActive) {
       if (coupon.type === "percentage") couponDiscount = subtotal * (Number(coupon.value) / 100);
       else if (coupon.type === "fixed") couponDiscount = Math.min(Number(coupon.value), subtotal);
-      else if (coupon.type === "free_shipping") shippingCost = 0;
+      else if (coupon.type === "free_shipping") freeShippingCoupon = true;
     }
   }
+
+  const shipping = governorate ? calculateShipping({
+    products: cart.items.flatMap(item => {
+      const product = productMap[item.productId];
+      return product ? [{ price: Number(product.price), quantity: item.quantity, freeShipping: product.freeShipping, freeShippingStartAt: product.freeShippingStartAt, freeShippingEndAt: product.freeShippingEndAt }] : [];
+    }),
+    subtotal,
+    baseShippingCost: Number(governorate.shippingCost),
+    governorateThreshold: governorate.freeShippingThreshold ? Number(governorate.freeShippingThreshold) : null,
+    surcharge: 0,
+    freeShippingCoupon,
+  }) : { finalCost: 0, freeShippingReason: null };
+  const shippingCost = shipping.finalCost;
 
   const total = Math.max(0, subtotal - couponDiscount + shippingCost);
   return {
     items, subtotal, discount: 0, shippingCost, total,
     couponCode: cart.couponCode || null, couponDiscount,
     governorateId: cart.governorateId || null, notes: cart.notes || null,
+    freeShippingReason: shipping.freeShippingReason,
   };
 }
 

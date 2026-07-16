@@ -89,6 +89,9 @@ export interface ProductSummary {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
   /** @nullable */
   publisher?: string | null;
   /** @nullable */
@@ -124,6 +127,9 @@ export interface Product {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
   isRevision?: boolean;
   isBundle?: boolean;
   /** @nullable */
@@ -306,6 +312,9 @@ export interface CartItem {
   subtotal: number;
   inStock?: boolean;
   stockQuantity?: number;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
 }
 
 export interface Cart {
@@ -321,6 +330,8 @@ export interface Cart {
   governorateId?: number | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  freeShippingReason?: string | null;
 }
 
 export interface CartItemInput {
@@ -681,6 +692,8 @@ export interface AdminProduct {
   /** @nullable */
   publisherId?: number | null;
   /** @nullable */
+  categoryId?: number | null;
+  /** @nullable */
   educationType?: string | null;
   /** @nullable */
   bookType?: string | null;
@@ -693,6 +706,18 @@ export interface AdminProduct {
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingStartAt?: string | null;
+  /** @nullable */
+  freeShippingEndAt?: string | null;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
   sortOrder?: number;
   /** @nullable */
   internalNotes?: string | null;
@@ -718,6 +743,7 @@ export interface AdminProductInput {
   images?: string[];
   price: number;
   oldPrice?: number;
+  purchasePrice?: number;
   sku?: string;
   barcode?: string;
   status?: AdminProductInputStatus;
@@ -727,6 +753,8 @@ export interface AdminProductInput {
   gradeId?: number;
   subjectId?: number;
   publisherId?: number;
+  categoryId?: number;
+  author?: string;
   educationType?: string;
   bookType?: string;
   edition?: string;
@@ -736,6 +764,13 @@ export interface AdminProductInput {
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  freeShippingStartAt?: string;
+  freeShippingEndAt?: string;
+  freeShippingBadgeText?: string;
+  seoTitle?: string;
+  seoDescription?: string;
   internalNotes?: string;
 }
 
@@ -748,6 +783,7 @@ export interface AdminProductUpdate {
   images?: string[];
   price?: number;
   oldPrice?: number;
+  purchasePrice?: number;
   sku?: string;
   barcode?: string;
   status?: string;
@@ -756,6 +792,8 @@ export interface AdminProductUpdate {
   gradeId?: number;
   subjectId?: number;
   publisherId?: number;
+  categoryId?: number;
+  author?: string;
   educationType?: string;
   bookType?: string;
   edition?: string;
@@ -765,6 +803,13 @@ export interface AdminProductUpdate {
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  freeShippingStartAt?: string;
+  freeShippingEndAt?: string;
+  freeShippingBadgeText?: string;
+  seoTitle?: string;
+  seoDescription?: string;
   internalNotes?: string;
 }
 

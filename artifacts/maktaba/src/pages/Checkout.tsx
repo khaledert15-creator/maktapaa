@@ -43,7 +43,10 @@ export default function Checkout() {
 
   const [selectedGovId, setSelectedGovId] = useState<number | undefined>(undefined);
   const selectedGov = governorates?.find(g => g.id === selectedGovId);
-  const shippingCost = selectedGov?.shippingCost || 0;
+  const allProductsFree = Boolean(cart?.items.length) && cart!.items.every(item => item.freeShipping);
+  const thresholdReached = Boolean(selectedGov?.freeShippingThreshold && cart && cart.subtotal >= selectedGov.freeShippingThreshold);
+  const shippingCost = allProductsFree || thresholdReached ? 0 : selectedGov?.shippingCost || 0;
+  const shippingReason = allProductsFree ? "جميع منتجات طلبك تشمل شحنًا مجانيًا" : thresholdReached ? "طلبك تجاوز حد الشحن المجاني للمحافظة" : null;
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -363,6 +366,7 @@ export default function Checkout() {
                       مدة التوصيل المتوقعة: {selectedGov.estimatedDays} أيام عمل
                     </div>
                   )}
+                  {shippingReason && <p className="text-xs font-medium text-emerald-700">{shippingReason}</p>}
 
                   <div className="border-t pt-3 mt-3 flex justify-between items-center">
                     <span className="font-bold text-lg">الإجمالي النهائي</span>

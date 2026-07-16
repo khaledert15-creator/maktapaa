@@ -72,6 +72,13 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    proxy: {
+      '/api': {
+        // Port 5000 is commonly occupied by AirPlay Receiver on macOS.
+        target: process.env.API_URL || 'http://127.0.0.1:5001',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port,

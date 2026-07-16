@@ -137,6 +137,7 @@ export default function Cart() {
                             {!item.inStock && (
                               <span className="text-xs text-destructive font-semibold">غير متوفر حالياً</span>
                             )}
+                            {item.freeShipping && <span className="block text-xs font-bold text-emerald-700">{item.freeShippingBadgeText || 'شحن مجاني'}</span>}
                           </div>
                         </div>
                       </TableCell>

@@ -19,4 +19,7 @@ export interface CartItem {
   subtotal: number;
   inStock?: boolean;
   stockQuantity?: number;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
 }

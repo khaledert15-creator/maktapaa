@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, stockMovementsTable } from "@workspace/db";
-import { eq, and, ilike, desc, gte, lte, sql } from "drizzle-orm";
+import { eq, and, or, ilike, desc, gte, lte, sql } from "drizzle-orm";
 import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
+import { writeAuditLog } from "../../services/audit";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
-router.use(requireAdminPermission("orders.manage"));
 
 function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof orderItemsTable.$inferSelect[], history: typeof orderStatusHistoryTable.$inferSelect[]) {
   return {
@@ -33,15 +33,17 @@ function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof ord
 }
 
 router.get("/admin/orders", async (req, res): Promise<void> => {
-  const { page = "1", limit = "20", q, status, paymentStatus, dateFrom, dateTo } = req.query as Record<string, string>;
+  const { page = "1", limit = "20", q, status, paymentStatus, paymentMethod, governorate, dateFrom, dateTo } = req.query as Record<string, string>;
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
   const offset = (pageNum - 1) * limitNum;
 
   const conditions: ReturnType<typeof eq>[] = [];
-  if (q) conditions.push(ilike(ordersTable.orderNumber, `%${q}%`));
+  if (q) conditions.push(or(ilike(ordersTable.orderNumber, `%${q}%`), ilike(ordersTable.customerName, `%${q}%`), ilike(ordersTable.mobile, `%${q}%`)) as ReturnType<typeof eq>);
   if (status) conditions.push(eq(ordersTable.status, status as typeof ordersTable.$inferSelect["status"]));
   if (paymentStatus) conditions.push(eq(ordersTable.paymentStatus, paymentStatus as typeof ordersTable.$inferSelect["paymentStatus"]));
+  if (paymentMethod) conditions.push(eq(ordersTable.paymentMethod, paymentMethod as typeof ordersTable.$inferSelect["paymentMethod"]));
+  if (governorate) conditions.push(eq(ordersTable.governorateName, governorate));
   if (dateFrom) conditions.push(gte(ordersTable.createdAt, new Date(dateFrom)));
   if (dateTo) conditions.push(lte(ordersTable.createdAt, new Date(dateTo)));
 
@@ -76,10 +78,11 @@ router.get("/admin/orders/:id", async (req, res): Promise<void> => {
   res.json(mapAdminOrder(order, items, history));
 });
 
-router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
+router.patch("/admin/orders/:id", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { customerName, mobile, altMobile, city, detailedAddress, landmark, deliveryNotes, orderNotes, internalNotes, trackingNumber, shippingCompany, estimatedDeliveryDate } = req.body;
+  const [before] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
 
   const [order] = await db.update(ordersTable).set({
     ...(customerName && { customerName }), ...(mobile && { mobile }), ...(altMobile !== undefined && { altMobile }),
@@ -90,6 +93,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   }).where(eq(ordersTable.id, id)).returning();
 
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  await writeAuditLog(req, { action: "order.update", entityType: "order", entityId: id, description: `تعديل الطلب ${order.orderNumber}`, beforeData: before ?? null, afterData: order });
 
   const [items, history] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id)),
@@ -99,7 +103,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
   res.json(mapAdminOrder(order, items, history));
 });
 
-router.patch("/admin/orders/:id/status", async (req, res): Promise<void> => {
+router.patch("/admin/orders/:id/status", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { status, notes, trackingNumber, shippingCompany } = req.body;
@@ -114,6 +118,7 @@ router.patch("/admin/orders/:id/status", async (req, res): Promise<void> => {
   await db.insert(orderStatusHistoryTable).values({
     orderId: id, status, notes: notes || null, employeeId: req.session.adminId as number || null,
   });
+  await writeAuditLog(req, { action: "order.status_update", entityType: "order", entityId: id, description: `تغيير حالة الطلب ${order.orderNumber} إلى ${status}`, afterData: { status, notes, trackingNumber, shippingCompany } });
 
   const [items, history] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id)),
@@ -123,7 +128,7 @@ router.patch("/admin/orders/:id/status", async (req, res): Promise<void> => {
   res.json(mapAdminOrder(order, items, history));
 });
 
-router.patch("/admin/orders/:id/cancellation", async (req, res): Promise<void> => {
+router.patch("/admin/orders/:id/cancellation", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { decision, notes } = req.body;
@@ -176,6 +181,8 @@ router.patch("/admin/orders/:id/cancellation", async (req, res): Promise<void> =
       }
     }
   }
+
+  await writeAuditLog(req, { action: `order.cancellation_${decision}`, entityType: "order", entityId: id, description: decision === "approved" ? "الموافقة على طلب إلغاء" : "رفض طلب إلغاء", afterData: { decision, notes } });
 
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   const [items2, history] = await Promise.all([

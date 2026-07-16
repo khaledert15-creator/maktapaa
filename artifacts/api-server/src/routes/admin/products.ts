@@ -1,11 +1,18 @@
 import { Router, type IRouter } from "express";
-import { db, productsTable, stagesTable, gradesTable, subjectsTable, publishersTable, stockMovementsTable } from "@workspace/db";
+import { db, productsTable, productImagesTable, stagesTable, gradesTable, subjectsTable, publishersTable, stockMovementsTable } from "@workspace/db";
 import { eq, and, ilike, desc, isNull, sql } from "drizzle-orm";
 import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
+import multer from "multer";
+import { imageStorage } from "../../services/storage";
+import { writeAuditLog } from "../../services/audit";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
-router.use(requireAdminPermission("products.manage"));
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, callback) => callback(null, ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)),
+});
 
 function mapAdminProduct(p: typeof productsTable.$inferSelect) {
   return {
@@ -13,14 +20,19 @@ function mapAdminProduct(p: typeof productsTable.$inferSelect) {
     descriptionShort: p.descriptionShort, descriptionFull: p.descriptionFull,
     coverImage: p.coverImage, images: p.images,
     price: Number(p.price), oldPrice: p.oldPrice ? Number(p.oldPrice) : null,
+    purchasePrice: p.purchasePrice ? Number(p.purchasePrice) : null,
     sku: p.sku, barcode: p.barcode, status: p.status,
     stockQuantity: p.stockQuantity, reservedQuantity: p.reservedQuantity,
     minStockLevel: p.minStockLevel,
-    stageId: p.stageId, gradeId: p.gradeId, subjectId: p.subjectId, publisherId: p.publisherId,
+    stageId: p.stageId, gradeId: p.gradeId, subjectId: p.subjectId, publisherId: p.publisherId, categoryId: p.categoryId,
     educationType: p.educationType, bookType: p.bookType, edition: p.edition,
     schoolYear: p.schoolYear,
     isBestSeller: p.isBestSeller, isFeatured: p.isFeatured, isNew: p.isNew,
     isRevision: p.isRevision, isBundle: p.isBundle, sortOrder: p.sortOrder,
+    isOffer: p.isOffer, freeShipping: p.freeShipping,
+    freeShippingStartAt: p.freeShippingStartAt, freeShippingEndAt: p.freeShippingEndAt,
+    freeShippingBadgeText: p.freeShippingBadgeText,
+    seoTitle: p.seoTitle, seoDescription: p.seoDescription,
     internalNotes: p.internalNotes,
     createdAt: p.createdAt, updatedAt: p.updatedAt,
   };
@@ -53,7 +65,7 @@ router.get("/admin/products", async (req, res): Promise<void> => {
   res.json({ items: items.map(mapAdminProduct), total: count, page: pageNum, limit: limitNum });
 });
 
-router.post("/admin/products", async (req, res): Promise<void> => {
+router.post("/admin/products", requireAdminPermission("products.create"), async (req, res): Promise<void> => {
   const { nameAr, nameEn, price, oldPrice, sku, barcode, status, stockQuantity, ...rest } = req.body;
   if (!nameAr || !price) { res.status(400).json({ error: "الاسم العربي والسعر مطلوبان" }); return; }
 
@@ -68,6 +80,8 @@ router.post("/admin/products", async (req, res): Promise<void> => {
     ...rest,
   }).returning();
 
+  await writeAuditLog(req, { action: "product.create", entityType: "product", entityId: product.id, description: `إنشاء المنتج ${product.nameAr}`, afterData: mapAdminProduct(product) });
+
   res.status(201).json(mapAdminProduct(product));
 });
 
@@ -79,28 +93,32 @@ router.get("/admin/products/:id", async (req, res): Promise<void> => {
   res.json(mapAdminProduct(product));
 });
 
-router.patch("/admin/products/:id", async (req, res): Promise<void> => {
+router.patch("/admin/products/:id", requireAdminPermission("products.edit"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { price, oldPrice, stockQuantity, ...rest } = req.body;
+  const { price, oldPrice, purchasePrice, stockQuantity, ...rest } = req.body;
+  const [before] = await db.select().from(productsTable).where(eq(productsTable.id, id));
 
   const updateData: Record<string, unknown> = { ...rest };
   if (price !== undefined) updateData.price = String(price);
   if (oldPrice !== undefined) updateData.oldPrice = oldPrice ? String(oldPrice) : null;
+  if (purchasePrice !== undefined) updateData.purchasePrice = purchasePrice ? String(purchasePrice) : null;
 
   const [product] = await db.update(productsTable).set(updateData).where(eq(productsTable.id, id)).returning();
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  await writeAuditLog(req, { action: "product.update", entityType: "product", entityId: id, description: `تعديل المنتج ${product.nameAr}`, beforeData: before ? mapAdminProduct(before) : null, afterData: mapAdminProduct(product) });
   res.json(mapAdminProduct(product));
 });
 
-router.delete("/admin/products/:id", async (req, res): Promise<void> => {
+router.delete("/admin/products/:id", requireAdminPermission("products.delete"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   await db.update(productsTable).set({ deletedAt: new Date(), status: "archived" }).where(eq(productsTable.id, id));
+  await writeAuditLog(req, { action: "product.archive", entityType: "product", entityId: id, description: `أرشفة المنتج رقم ${id}` });
   res.sendStatus(204);
 });
 
-router.patch("/admin/products/:id/stock", async (req, res): Promise<void> => {
+router.patch("/admin/products/:id/stock", requireAdminPermission("inventory.adjust"), async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { quantity, movementType, reason } = req.body;
@@ -125,8 +143,58 @@ router.patch("/admin/products/:id/stock", async (req, res): Promise<void> => {
     quantityChanged: quantityAfter - quantityBefore, reason: reason || null,
     employeeId: req.session.adminId as number || null,
   });
+  await writeAuditLog(req, { action: "inventory.adjust", entityType: "product", entityId: id, description: `تعديل مخزون ${product.nameAr} من ${quantityBefore} إلى ${quantityAfter}`, beforeData: { stockQuantity: quantityBefore }, afterData: { stockQuantity: quantityAfter, reason } });
 
   res.json(mapAdminProduct(updated));
+});
+
+router.get("/admin/products/:id/images", async (req, res): Promise<void> => {
+  const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+  res.json(await db.select().from(productImagesTable).where(eq(productImagesTable.productId, id)).orderBy(productImagesTable.sortOrder));
+});
+
+router.post("/admin/products/:id/images", requireAdminPermission("products.images.manage"), imageUpload.array("images", 10), async (req, res): Promise<void> => {
+  const id = Number(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+  const files = req.files as Express.Multer.File[];
+  if (!files?.length) { res.status(400).json({ error: "اختر صورة واحدة على الأقل" }); return; }
+  const existing = await db.select().from(productImagesTable).where(eq(productImagesTable.productId, id));
+  const created = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const stored = await imageStorage.saveImage(files[index].buffer);
+    const [image] = await db.insert(productImagesTable).values({ productId: id, url: stored.url, storageKey: stored.storageKey, altText: req.body.altText || null, sortOrder: existing.length + index, isPrimary: existing.length === 0 && index === 0 }).returning();
+    created.push(image);
+  }
+  const primary = created.find(image => image.isPrimary);
+  if (primary) await db.update(productsTable).set({ coverImage: primary.url }).where(eq(productsTable.id, id));
+  await writeAuditLog(req, { action: "product.images.upload", entityType: "product", entityId: id, description: `رفع ${created.length} صورة للمنتج` });
+  res.status(201).json(created);
+});
+
+router.patch("/admin/products/:productId/images/:imageId", requireAdminPermission("products.images.manage"), async (req, res): Promise<void> => {
+  const productId = Number(Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId);
+  const imageId = Number(Array.isArray(req.params.imageId) ? req.params.imageId[0] : req.params.imageId);
+  const { altText, sortOrder, isPrimary } = req.body;
+  if (isPrimary) await db.update(productImagesTable).set({ isPrimary: false }).where(eq(productImagesTable.productId, productId));
+  const [image] = await db.update(productImagesTable).set({ ...(altText !== undefined && { altText }), ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }), ...(isPrimary !== undefined && { isPrimary: Boolean(isPrimary) }) }).where(eq(productImagesTable.id, imageId)).returning();
+  if (!image) { res.status(404).json({ error: "الصورة غير موجودة" }); return; }
+  if (image.isPrimary) await db.update(productsTable).set({ coverImage: image.url }).where(eq(productsTable.id, productId));
+  await writeAuditLog(req, { action: "product.images.update", entityType: "product", entityId: productId, description: "تحديث ترتيب أو صورة المنتج الرئيسية" });
+  res.json(image);
+});
+
+router.delete("/admin/products/:productId/images/:imageId", requireAdminPermission("products.images.manage"), async (req, res): Promise<void> => {
+  const productId = Number(Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId);
+  const imageId = Number(Array.isArray(req.params.imageId) ? req.params.imageId[0] : req.params.imageId);
+  const [image] = await db.delete(productImagesTable).where(eq(productImagesTable.id, imageId)).returning();
+  if (!image) { res.status(404).json({ error: "الصورة غير موجودة" }); return; }
+  await imageStorage.deleteImage(image.storageKey);
+  if (image.isPrimary) {
+    const [next] = await db.select().from(productImagesTable).where(eq(productImagesTable.productId, productId)).orderBy(productImagesTable.sortOrder).limit(1);
+    if (next) await db.update(productImagesTable).set({ isPrimary: true }).where(eq(productImagesTable.id, next.id));
+    await db.update(productsTable).set({ coverImage: next?.url ?? null }).where(eq(productsTable.id, productId));
+  }
+  await writeAuditLog(req, { action: "product.images.delete", entityType: "product", entityId: productId, description: "حذف صورة منتج" });
+  res.sendStatus(204);
 });
 
 // Admin classifications

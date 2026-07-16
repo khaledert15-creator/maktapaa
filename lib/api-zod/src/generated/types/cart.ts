@@ -20,4 +20,6 @@ export interface Cart {
   governorateId?: number | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  freeShippingReason?: string | null;
 }

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -57,6 +57,11 @@ export const ordersTable = pgTable("orders", {
   couponDiscount: numeric("coupon_discount", { precision: 10, scale: 2 }).notNull().default("0"),
   couponCode: text("coupon_code"),
   shippingCost: numeric("shipping_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  shippingBaseCost: numeric("shipping_base_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  shippingSurcharge: numeric("shipping_surcharge", { precision: 10, scale: 2 }).notNull().default("0"),
+  shippingDiscount: numeric("shipping_discount", { precision: 10, scale: 2 }).notNull().default("0"),
+  freeShippingReason: text("free_shipping_reason"),
+  shippingRuleSnapshot: jsonb("shipping_rule_snapshot").$type<Record<string, unknown>>(),
   total: numeric("total", { precision: 10, scale: 2 }).notNull(),
 
   estimatedDeliveryDate: text("estimated_delivery_date"),

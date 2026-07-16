@@ -14,6 +14,7 @@ import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminProducts from "@/pages/AdminProducts";
 import { AdminProductForm, AdminOrders, AdminOrderDetail } from "@/pages/Stubs";
+import { AdminCustomers, AdminInventory, AdminCoupons, AdminShipping, AdminClassifications, AdminContent, AdminReports, AdminEmployees } from "@/pages/AdminSections";
 import { Route, Switch } from "wouter";
 import NotFound from "@/pages/not-found";
 
@@ -69,6 +70,14 @@ export function AppRouter() {
           </AdminLayout>
         )}
       </Route>
+      <Route path="/admin/customers">{() => <AdminLayout><AdminCustomers /></AdminLayout>}</Route>
+      <Route path="/admin/inventory">{() => <AdminLayout><AdminInventory /></AdminLayout>}</Route>
+      <Route path="/admin/coupons">{() => <AdminLayout><AdminCoupons /></AdminLayout>}</Route>
+      <Route path="/admin/shipping">{() => <AdminLayout><AdminShipping /></AdminLayout>}</Route>
+      <Route path="/admin/classifications">{() => <AdminLayout><AdminClassifications /></AdminLayout>}</Route>
+      <Route path="/admin/content">{() => <AdminLayout><AdminContent /></AdminLayout>}</Route>
+      <Route path="/admin/reports">{() => <AdminLayout><AdminReports /></AdminLayout>}</Route>
+      <Route path="/admin/employees">{() => <AdminLayout><AdminEmployees /></AdminLayout>}</Route>
       <Route path="/admin/:rest*">
         {() => (
           <AdminLayout>

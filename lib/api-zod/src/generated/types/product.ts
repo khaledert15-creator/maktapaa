@@ -33,6 +33,9 @@ export interface Product {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
   isRevision?: boolean;
   isBundle?: boolean;
   /** @nullable */

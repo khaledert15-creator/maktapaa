@@ -15,6 +15,7 @@ export interface AdminProductUpdate {
   images?: string[];
   price?: number;
   oldPrice?: number;
+  purchasePrice?: number;
   sku?: string;
   barcode?: string;
   status?: string;
@@ -23,6 +24,8 @@ export interface AdminProductUpdate {
   gradeId?: number;
   subjectId?: number;
   publisherId?: number;
+  categoryId?: number;
+  author?: string;
   educationType?: string;
   bookType?: string;
   edition?: string;
@@ -32,5 +35,12 @@ export interface AdminProductUpdate {
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  freeShippingStartAt?: Date;
+  freeShippingEndAt?: Date;
+  freeShippingBadgeText?: string;
+  seoTitle?: string;
+  seoDescription?: string;
   internalNotes?: string;
 }

@@ -9,3 +9,4 @@ export * from "./coupons";
 export * from "./content";
 export * from "./reviews";
 export * from "./sessions";
+export * from "./audit";

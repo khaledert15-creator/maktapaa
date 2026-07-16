@@ -23,6 +23,9 @@ export interface ProductSummary {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
   /** @nullable */
   publisher?: string | null;
   /** @nullable */
