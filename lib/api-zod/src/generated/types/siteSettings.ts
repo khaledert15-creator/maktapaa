@@ -31,6 +31,12 @@ export interface SiteSettings {
   announcementBar?: string | null;
   announcementEnabled?: boolean;
   /** @nullable */
+  announcementLink?: string | null;
+  /** @nullable */
+  announcementStartAt?: Date | null;
+  /** @nullable */
+  announcementEndAt?: Date | null;
+  /** @nullable */
   seoTitle?: string | null;
   /** @nullable */
   seoDescription?: string | null;

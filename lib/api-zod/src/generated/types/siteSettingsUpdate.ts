@@ -20,6 +20,9 @@ export interface SiteSettingsUpdate {
   telegramUrl?: string;
   announcementBar?: string;
   announcementEnabled?: boolean;
+  announcementLink?: string;
+  announcementStartAt?: Date;
+  announcementEndAt?: Date;
   seoTitle?: string;
   seoDescription?: string;
 }

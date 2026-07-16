@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import app from "../app";
 import {
   auditLogsTable, cancellationRequestsTable, couponUsageTable, couponsTable, db,
   governoratesTable, orderItemsTable, ordersTable, pool, productsTable, reviewsTable,
   stockMovementsTable, usersTable, customersTable,
-  stagesTable,
+  stagesTable, bannersTable, siteSettingsTable,
 } from "@workspace/db";
 import { CouponValidationError, validateCoupon } from "../services/coupons";
 import { OrderStateError, transitionOrderStatus } from "../services/order-state";
@@ -22,6 +22,9 @@ const createdOrderIds: number[] = [];
 const createdCouponIds: number[] = [];
 const createdCustomerIds: number[] = [];
 const createdStageIds: number[] = [];
+const createdBannerIds: number[] = [];
+let contentTestCookie = "";
+let contentTestUserId = 0;
 
 before(async () => {
   server = app.listen(0);
@@ -32,6 +35,7 @@ before(async () => {
 });
 
 after(async () => {
+  for (const id of createdBannerIds) await db.delete(bannersTable).where(eq(bannersTable.id, id));
   for (const id of createdCouponIds) await db.delete(couponsTable).where(eq(couponsTable.id, id));
   for (const id of createdOrderIds) await db.delete(ordersTable).where(eq(ordersTable.id, id));
   for (const id of createdProductIds) await db.delete(productsTable).where(eq(productsTable.id, id));
@@ -70,10 +74,13 @@ test("warehouse employee is denied employees, permissions, coupons, content, rep
     request("/api/admin/coupons", cookie, { method: "POST", body: JSON.stringify({ code: "BYPASS", type: "fixed", value: 1 }) }),
     request("/api/admin/content/settings", cookie),
     request("/api/admin/content/settings/title", cookie, { method: "PUT", body: JSON.stringify({ value: "blocked" }) }),
+    request("/api/admin/content/announcement", cookie),
+    request("/api/admin/content/announcement", cookie, { method: "PUT", body: JSON.stringify({ text: "محظور", isActive: true }) }),
+    request("/api/admin/content/banners", cookie),
     request("/api/admin/reports/inventory", cookie),
     request("/api/admin/audit-logs", cookie),
   ]);
-  assert.deepEqual(protectedRequests.map(response => response.status), Array(8).fill(403));
+  assert.deepEqual(protectedRequests.map(response => response.status), Array(11).fill(403));
 
   const suffix = randomUUID();
   const [product] = await db.insert(productsTable).values({ nameAr: `مخزون أمني ${suffix}`, slug: `security-stock-${suffix}`, price: "10", stockQuantity: 2, status: "active" }).returning();
@@ -82,6 +89,71 @@ test("warehouse employee is denied employees, permissions, coupons, content, rep
   const adjustment = await request(`/api/admin/products/${product.id}/stock`, cookie, { method: "PATCH", body: JSON.stringify({ quantity: 1, movementType: "manual_increase", reason: "اختبار صلاحية المخزن" }) });
   assert.equal(adjustment.status, 200);
   assert.equal((await db.select().from(productsTable).where(eq(productsTable.id, product.id)))[0].stockQuantity, 3);
+  contentTestCookie = cookie;
+  contentTestUserId = user.id;
+  await db.update(usersTable).set({ role: "content_manager", permissions: ["content.manage"] }).where(eq(usersTable.id, user.id));
+});
+
+test("content manager edits announcement and scheduled hero slides with immediate public visibility and audit logs", async () => {
+  assert.ok(contentTestCookie && contentTestUserId);
+  const cookie = contentTestCookie;
+  const announcementKeys = ["announcementBar", "announcementEnabled", "announcementLink", "announcementStartAt", "announcementEndAt"];
+  const beforeSettings = await db.select().from(siteSettingsTable).where(inArray(siteSettingsTable.key, announcementKeys));
+  const suffix = randomUUID();
+  const now = Date.now();
+  const past = new Date(now - 60_000).toISOString();
+  const future = new Date(now + 60 * 60_000).toISOString();
+  const later = new Date(now + 2 * 60 * 60_000).toISOString();
+  let bannerId: number | null = null;
+  try {
+    const savedAnnouncement = await request("/api/admin/content/announcement", cookie, { method: "PUT", body: JSON.stringify({ text: `إعلان اختبار ${suffix}`, isActive: true, link: "/offers", startAt: past, endAt: later }) });
+    assert.equal(savedAnnouncement.status, 200);
+    const publicSettings = await fetch(`${baseUrl}/api/content/settings`).then(response => response.json()) as { announcementBar: string; announcementEnabled: boolean; announcementLink: string };
+    assert.equal(publicSettings.announcementBar, `إعلان اختبار ${suffix}`);
+    assert.equal(publicSettings.announcementEnabled, true);
+    assert.equal(publicSettings.announcementLink, "/offers");
+
+    const createResponse = await request("/api/admin/content/banners", cookie, { method: "POST", body: JSON.stringify({
+      imageUrl: "https://placehold.co/1600x650/0f172a/ffffff",
+      titleAr: `بانر اختبار ${suffix}`,
+      subtitleAr: "وصف متحكم به من لوحة الإدارة",
+      badgeText: "شارة اختبار",
+      primaryButtonText: "الزر الأساسي",
+      primaryButtonUrl: "/catalog",
+      secondaryButtonText: "الزر الثانوي",
+      secondaryButtonUrl: "/offers",
+      textAlignment: "center",
+      sortOrder: 9876,
+      isActive: true,
+      startAt: future,
+      endAt: later,
+    }) });
+    assert.equal(createResponse.status, 201);
+    const created = await createResponse.json() as { id: number };
+    bannerId = created.id; createdBannerIds.push(created.id);
+    const beforeSchedule = await fetch(`${baseUrl}/api/content/homepage`).then(response => response.json()) as { banners: { id: number }[] };
+    assert.ok(!beforeSchedule.banners.some(row => row.id === created.id), "future slide is excluded from the public storefront");
+
+    const publishResponse = await request(`/api/admin/content/banners/${created.id}`, cookie, { method: "PATCH", body: JSON.stringify({ startAt: past, titleAr: `بانر منشور ${suffix}` }) });
+    assert.equal(publishResponse.status, 200);
+    const publicHomepage = await fetch(`${baseUrl}/api/content/homepage`).then(response => response.json()) as { banners: { id: number; titleAr: string; badgeText: string; primaryButtonText: string; secondaryButtonText: string; textAlignment: string }[] };
+    const publicBanner = publicHomepage.banners.find(row => row.id === created.id);
+    assert.equal(publicBanner?.titleAr, `بانر منشور ${suffix}`);
+    assert.equal(publicBanner?.badgeText, "شارة اختبار");
+    assert.equal(publicBanner?.primaryButtonText, "الزر الأساسي");
+    assert.equal(publicBanner?.secondaryButtonText, "الزر الثانوي");
+    assert.equal(publicBanner?.textAlignment, "center");
+
+    const auditRows = await db.select().from(auditLogsTable).where(eq(auditLogsTable.employeeId, contentTestUserId));
+    assert.ok(auditRows.some(row => row.action === "content.announcement_update"));
+    assert.ok(auditRows.some(row => row.action === "content.banner_create" && row.entityId === String(created.id)));
+    assert.ok(auditRows.some(row => row.action === "content.banner_update" && row.entityId === String(created.id)));
+  } finally {
+    if (bannerId) await db.delete(bannersTable).where(eq(bannersTable.id, bannerId));
+    await db.delete(siteSettingsTable).where(inArray(siteSettingsTable.key, announcementKeys));
+    if (beforeSettings.length) await db.insert(siteSettingsTable).values(beforeSettings.map(({ id: _id, ...row }) => row));
+    await db.update(usersTable).set({ role: "warehouse", permissions: ["products.view", "inventory.view", "inventory.adjust"] }).where(eq(usersTable.id, contentTestUserId));
+  }
 });
 
 test("writable HTTP endpoints reject invalid discounts, negative product values and invalid reviews", async () => {

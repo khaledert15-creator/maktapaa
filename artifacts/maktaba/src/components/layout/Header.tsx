@@ -15,14 +15,15 @@ const navigation = [
 export function Header() {
   const { itemCount } = useCartContext();
   const { customer } = useAuth();
-  const { data: settings } = useGetSiteSettings({ query: { queryKey: getGetSiteSettingsQueryKey(), staleTime: 60_000 } });
+  const { data: settings } = useGetSiteSettings({ query: { queryKey: getGetSiteSettingsQueryKey(), staleTime: 0, refetchOnMount: "always", refetchInterval: 5_000 } });
   const [, setLocation] = useLocation();
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const submitSearch = (event: FormEvent) => { event.preventDefault(); if (query.trim()) setLocation(`/search?q=${encodeURIComponent(query.trim())}`); };
+  const announcementLink = settings?.announcementLink && (settings.announcementLink.startsWith("/") || /^https?:\/\//i.test(settings.announcementLink)) ? settings.announcementLink : null;
 
   return <header className="sticky top-0 z-50 border-b bg-white/95 shadow-sm backdrop-blur">
-    {settings?.announcementEnabled && settings.announcementBar && <div className="bg-primary px-4 py-2 text-center text-xs font-bold text-primary-foreground sm:text-sm">{settings.announcementBar}</div>}
+    {settings?.announcementEnabled && settings.announcementBar && <div className="bg-primary px-4 py-2 text-center text-xs font-bold text-primary-foreground sm:text-sm">{announcementLink ? <a href={announcementLink} className="block transition-opacity hover:opacity-85">{settings.announcementBar}</a> : settings.announcementBar}</div>}
     <div className="container mx-auto flex min-h-20 items-center gap-3 px-4">
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}><SheetTrigger asChild><Button variant="ghost" size="icon" className="md:hidden"><Menu className="h-6 w-6" /><span className="sr-only">فتح القائمة</span></Button></SheetTrigger><SheetContent side="right" className="w-80"><SheetHeader><SheetTitle className="text-right">القائمة الرئيسية</SheetTitle></SheetHeader><nav className="mt-8 flex flex-col gap-1">{navigation.map(([label, href]) => <Link key={href} href={href} onClick={() => setMenuOpen(false)} className="rounded-xl px-4 py-3 font-bold hover:bg-muted">{label}</Link>)}</nav></SheetContent></Sheet>
       <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="الصفحة الرئيسية">{settings?.logoUrl ? <img src={settings.logoUrl} alt={settings.storeNameAr} width="150" height="48" className="h-11 w-auto max-w-36 object-contain" /> : <span className="whitespace-nowrap text-xl font-black tracking-tight text-primary sm:text-2xl">{settings?.storeNameAr || "مكتبة دوت كوم"}</span>}</Link>

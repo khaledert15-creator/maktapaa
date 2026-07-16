@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, bannersTable, faqsTable, siteSettingsTable, stagesTable, gradesTable, subjectsTable, publishersTable, categoriesTable, productsTable } from "@workspace/db";
-import { eq, asc, inArray, sql } from "drizzle-orm";
+import { and, eq, asc, inArray, sql, isNull, lte, gte, or } from "drizzle-orm";
 import { enrichProductSummaries } from "../services/catalog";
 
 const router: IRouter = Router();
@@ -11,6 +11,10 @@ async function getSettings(): Promise<Record<string, string>> {
 }
 
 function mapSettings(settings: Record<string, string>) {
+  const now = Date.now();
+  const startAt = settings.announcementStartAt ? Date.parse(settings.announcementStartAt) : null;
+  const endAt = settings.announcementEndAt ? Date.parse(settings.announcementEndAt) : null;
+  const announcementInSchedule = (startAt === null || Number.isNaN(startAt) || startAt <= now) && (endAt === null || Number.isNaN(endAt) || endAt >= now);
   return {
     storeName: settings.storeName || "Maktaba Dot Com",
     storeNameAr: settings.storeNameAr || "مكتبة دوت كوم",
@@ -24,20 +28,34 @@ function mapSettings(settings: Record<string, string>) {
     tiktokUrl: settings.tiktokUrl || null,
     telegramUrl: settings.telegramUrl || null,
     announcementBar: settings.announcementBar || null,
-    announcementEnabled: settings.announcementEnabled === "true",
+    announcementEnabled: settings.announcementEnabled === "true" && announcementInSchedule,
+    announcementLink: settings.announcementLink || null,
+    announcementStartAt: settings.announcementStartAt || null,
+    announcementEndAt: settings.announcementEndAt || null,
     seoTitle: settings.seoTitle || null,
     seoDescription: settings.seoDescription || null,
   };
 }
 
+const activeBannersWhere = () => {
+  const now = new Date();
+  return and(
+    eq(bannersTable.isActive, true),
+    or(isNull(bannersTable.startAt), lte(bannersTable.startAt, now)),
+    or(isNull(bannersTable.endAt), gte(bannersTable.endAt, now)),
+  );
+};
+
 router.get("/content/settings", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   const settings = await getSettings();
   res.json(mapSettings(settings));
 });
 
 router.get("/content/banners", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   const banners = await db.select().from(bannersTable)
-    .where(eq(bannersTable.isActive, true))
+    .where(activeBannersWhere())
     .orderBy(asc(bannersTable.sortOrder));
   res.json(banners);
 });
@@ -50,8 +68,9 @@ router.get("/content/faqs", async (_req, res): Promise<void> => {
 });
 
 router.get("/content/homepage", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   const [banners, stages, grades, subjects, publishers, categories, productSections, settings] = await Promise.all([
-    db.select().from(bannersTable).where(eq(bannersTable.isActive, true)).orderBy(asc(bannersTable.sortOrder)),
+    db.select().from(bannersTable).where(activeBannersWhere()).orderBy(asc(bannersTable.sortOrder)),
     db.select().from(stagesTable).where(eq(stagesTable.isActive, true)).orderBy(asc(stagesTable.sortOrder)),
     db.select().from(gradesTable).where(eq(gradesTable.isActive, true)).orderBy(asc(gradesTable.sortOrder)),
     db.select().from(subjectsTable).where(eq(subjectsTable.isActive, true)).orderBy(asc(subjectsTable.nameAr)),

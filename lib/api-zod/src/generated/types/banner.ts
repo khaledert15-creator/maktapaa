@@ -5,6 +5,7 @@
  * Maktaba Dot Com - Arabic RTL E-commerce API
  * OpenAPI spec version: 0.1.0
  */
+import type { BannerTextAlignment } from './bannerTextAlignment';
 
 export interface Banner {
   id: number;
@@ -14,7 +15,22 @@ export interface Banner {
   /** @nullable */
   subtitleAr?: string | null;
   /** @nullable */
+  badgeText?: string | null;
+  /** @nullable */
+  primaryButtonText?: string | null;
+  /** @nullable */
+  primaryButtonUrl?: string | null;
+  /** @nullable */
+  secondaryButtonText?: string | null;
+  /** @nullable */
+  secondaryButtonUrl?: string | null;
+  textAlignment: BannerTextAlignment;
+  /** @nullable */
   linkUrl?: string | null;
   sortOrder: number;
   isActive: boolean;
+  /** @nullable */
+  startAt?: Date | null;
+  /** @nullable */
+  endAt?: Date | null;
 }

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { getGetHomepageContentQueryKey, useGetHomepageContent, type ProductSummary } from "@workspace/api-client-react";
-import { BookOpen, GraduationCap, Library, PackageCheck, ShieldCheck, Truck, ChevronLeft, Sparkles } from "lucide-react";
+import { BookOpen, GraduationCap, Library, PackageCheck, ShieldCheck, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductSection } from "@/components/storefront/ProductSection";
 import { Seo } from "@/components/storefront/Seo";
+import { HeroBanner, type HeroSlide } from "@/components/storefront/HeroBanner";
 
 export default function Home() {
   const { data, isLoading, isError, refetch } = useGetHomepageContent({
@@ -14,6 +15,7 @@ export default function Home() {
       queryKey: getGetHomepageContentQueryKey(),
       staleTime: 0,
       refetchOnMount: "always",
+      refetchInterval: 5_000,
     },
   });
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -24,8 +26,6 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [banners.length]);
   const banner = banners[bannerIndex];
-  const responsiveBanner = banner as typeof banner & { imageWidth?: number | null; imageHeight?: number | null; imageVariants?: Record<string, { url: string; width: number }> | null };
-  const bannerSrcSet = responsiveBanner?.imageVariants ? Object.values(responsiveBanner.imageVariants).map(image => `${image.url} ${image.width}w`).join(", ") : undefined;
   const recentlyViewed = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("maktaba_recently_viewed") || "[]") as ProductSummary[]; }
     catch { return []; }
@@ -38,25 +38,9 @@ export default function Home() {
     <div className="overflow-hidden pb-10">
       <Seo title={data.settings?.seoTitle || `${data.settings?.storeNameAr || "مكتبة دوت كوم"} | كتبك الدراسية في مكان واحد`} description={data.settings?.seoDescription} />
 
-      <section className="relative bg-gradient-to-l from-slate-950 via-slate-900 to-blue-950 text-white">
-        {banner?.imageUrl && <img key={banner.id} src={banner.imageUrl} srcSet={bannerSrcSet} sizes="100vw" alt={banner.titleAr || "عرض مكتبة دوت كوم"} width={responsiveBanner.imageWidth || 1600} height={responsiveBanner.imageHeight || 650} fetchPriority="high" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-35" />}
-        <div className="absolute inset-0 bg-gradient-to-l from-slate-950/95 via-slate-900/75 to-transparent" />
-        <div className="container relative mx-auto grid min-h-[440px] items-center gap-8 px-4 py-14 md:grid-cols-[1.1fr_.9fr] md:py-20">
-          <div className="max-w-2xl animate-in fade-in slide-in-from-bottom-3 duration-700">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-sky-300/30 bg-sky-300/10 px-4 py-2 text-sm font-bold text-sky-200"><Sparkles className="h-4 w-4" /> اختيارات ذكية لكل طالب</div>
-            <h1 className="text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">{banner?.titleAr || "كل كتبك الدراسية في مكان واحد"}</h1>
-            <p className="mt-5 max-w-xl text-lg leading-8 text-slate-200">{banner?.subtitleAr || data.settings?.seoDescription || "اكتشف أحدث الكتب والمراجعات من دور النشر المفضلة لديك، مع شحن لكل محافظات مصر."}</p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" className="h-13 rounded-xl bg-sky-500 px-7 text-base text-white hover:bg-sky-400" asChild><Link href={banner?.linkUrl || "/catalog"}>ابدأ التصفح <ChevronLeft className="mr-2 h-5 w-5" /></Link></Button>
-              <Button size="lg" variant="outline" className="h-13 rounded-xl border-white/30 bg-white/10 px-7 text-base text-white hover:bg-white/20" asChild><Link href="/offers">العروض الحالية</Link></Button>
-            </div>
-          </div>
-          {!banner?.imageUrl && <div className="hidden justify-center md:flex"><div className="relative flex aspect-square w-80 items-center justify-center rounded-[4rem] border border-white/15 bg-white/5 backdrop-blur"><BookOpen className="h-32 w-32 text-sky-300" /><div className="absolute -right-6 top-10 rounded-2xl bg-amber-400 px-5 py-3 font-black text-slate-950 shadow-xl">أحدث الطبعات</div><div className="absolute -left-8 bottom-14 rounded-2xl bg-white px-5 py-3 font-black text-slate-950 shadow-xl">دفع عند الاستلام</div></div></div>}
-        </div>
-        {banners.length > 1 && <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-2">{banners.map((item, index) => <button key={item.id} aria-label={`العرض ${index + 1}`} onClick={() => setBannerIndex(index)} className={`h-2.5 rounded-full transition-all ${index === bannerIndex ? "w-8 bg-sky-400" : "w-2.5 bg-white/60"}`} />)}</div>}
-      </section>
+      {banner && <div className="relative"><HeroBanner slide={banner as HeroSlide} />{banners.length > 1 && <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-2">{banners.map((item, index) => <button key={item.id} aria-label={`العرض ${index + 1}`} onClick={() => setBannerIndex(index)} className={`h-2.5 rounded-full transition-all ${index === bannerIndex ? "w-8 bg-sky-400" : "w-2.5 bg-white/60"}`} />)}</div>}</div>}
 
-      <section className="container mx-auto -mt-5 px-4 relative z-10"><div className="grid grid-cols-2 gap-3 rounded-2xl border bg-white p-3 shadow-xl md:grid-cols-4">{[
+      <section className={`container relative z-10 mx-auto px-4 ${banner ? "-mt-5" : "pt-6"}`}><div className="grid grid-cols-2 gap-3 rounded-2xl border bg-white p-3 shadow-xl md:grid-cols-4">{[
         [Truck, "شحن لكل مصر", "تسعير واضح حسب منطقتك"], [ShieldCheck, "دفع عند الاستلام", "بدون دفع إلكتروني حاليًا"], [PackageCheck, "تغليف آمن", "كتبك تصل بحالة ممتازة"], [Library, "بيانات محدثة", "السعر والمخزون لحظيًا"],
       ].map(([Icon, title, text]) => <div key={String(title)} className="flex items-center gap-3 rounded-xl p-3 sm:p-4"><div className="rounded-xl bg-sky-50 p-2.5 text-sky-600"><Icon className="h-5 w-5" /></div><div><div className="text-sm font-extrabold sm:text-base">{String(title)}</div><div className="hidden text-xs text-muted-foreground sm:block">{String(text)}</div></div></div>)}</div></section>
 

@@ -2498,6 +2498,9 @@ components:
         telegramUrl: { type: ["string", "null"] }
         announcementBar: { type: ["string", "null"] }
         announcementEnabled: { type: boolean }
+        announcementLink: { type: ["string", "null"] }
+        announcementStartAt: { type: ["string", "null"], format: date-time }
+        announcementEndAt: { type: ["string", "null"], format: date-time }
         seoTitle: { type: ["string", "null"] }
         seoDescription: { type: ["string", "null"] }
 
@@ -2517,20 +2520,31 @@ components:
         telegramUrl: { type: string }
         announcementBar: { type: string }
         announcementEnabled: { type: boolean }
+        announcementLink: { type: string }
+        announcementStartAt: { type: string, format: date-time }
+        announcementEndAt: { type: string, format: date-time }
         seoTitle: { type: string }
         seoDescription: { type: string }
 
     Banner:
       type: object
-      required: [id, imageUrl, sortOrder, isActive]
+      required: [id, imageUrl, sortOrder, isActive, textAlignment]
       properties:
         id: { type: integer }
         imageUrl: { type: string }
         titleAr: { type: ["string", "null"] }
         subtitleAr: { type: ["string", "null"] }
+        badgeText: { type: ["string", "null"] }
+        primaryButtonText: { type: ["string", "null"] }
+        primaryButtonUrl: { type: ["string", "null"] }
+        secondaryButtonText: { type: ["string", "null"] }
+        secondaryButtonUrl: { type: ["string", "null"] }
+        textAlignment: { type: string, enum: [right, center, left] }
         linkUrl: { type: ["string", "null"] }
         sortOrder: { type: integer }
         isActive: { type: boolean }
+        startAt: { type: ["string", "null"], format: date-time }
+        endAt: { type: ["string", "null"], format: date-time }
 
     BannerInput:
       type: object
@@ -2539,9 +2553,17 @@ components:
         imageUrl: { type: string }
         titleAr: { type: string }
         subtitleAr: { type: string }
+        badgeText: { type: string }
+        primaryButtonText: { type: string }
+        primaryButtonUrl: { type: string }
+        secondaryButtonText: { type: string }
+        secondaryButtonUrl: { type: string }
+        textAlignment: { type: string, enum: [right, center, left] }
         linkUrl: { type: string }
         sortOrder: { type: integer }
         isActive: { type: boolean }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
 
     BannerUpdate:
       type: object
@@ -2549,9 +2571,17 @@ components:
         imageUrl: { type: string }
         titleAr: { type: string }
         subtitleAr: { type: string }
+        badgeText: { type: string }
+        primaryButtonText: { type: string }
+        primaryButtonUrl: { type: string }
+        secondaryButtonText: { type: string }
+        secondaryButtonUrl: { type: string }
+        textAlignment: { type: string, enum: [right, center, left] }
         linkUrl: { type: string }
         sortOrder: { type: integer }
         isActive: { type: boolean }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
 
     HomepageContent:
       type: object

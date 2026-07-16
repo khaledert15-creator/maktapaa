@@ -78,7 +78,7 @@ test("PostgreSQL-backed catalog, shipping, order, inventory, permission and audi
       const [savedOrder] = await tx.select().from(ordersTable).where(eq(ordersTable.id, order.id));
       assert.deepEqual(savedOrder.shippingRuleSnapshot, { governorateId: governorate.id, cityId: city.id, baseCost: 70, surcharge: 10, finalCost: 80, rule: "standard" }, "shipping snapshot persists as JSONB");
       assert.equal((await tx.select().from(stockMovementsTable).where(eq(stockMovementsTable.orderId, order.id))).length, 1, "inventory movement is persisted");
-      assert.equal((await tx.select().from(auditLogsTable).where(eq(auditLogsTable.entityId, String(order.id)))).length, 1, "audit log is persisted");
+      assert.equal((await tx.select().from(auditLogsTable).where(and(eq(auditLogsTable.entityId, String(order.id)), eq(auditLogsTable.action, `order.test.${suffix}`)))).length, 1, "audit log is persisted");
 
       const [warehouse] = await tx.select().from(usersTable).where(eq(usersTable.email, "warehouse@maktaba.com"));
       assert.equal(warehouse.role, "warehouse");

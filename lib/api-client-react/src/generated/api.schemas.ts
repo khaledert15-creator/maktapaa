@@ -587,6 +587,12 @@ export interface SiteSettings {
   announcementBar?: string | null;
   announcementEnabled?: boolean;
   /** @nullable */
+  announcementLink?: string | null;
+  /** @nullable */
+  announcementStartAt?: string | null;
+  /** @nullable */
+  announcementEndAt?: string | null;
+  /** @nullable */
   seoTitle?: string | null;
   /** @nullable */
   seoDescription?: string | null;
@@ -606,9 +612,21 @@ export interface SiteSettingsUpdate {
   telegramUrl?: string;
   announcementBar?: string;
   announcementEnabled?: boolean;
+  announcementLink?: string;
+  announcementStartAt?: string;
+  announcementEndAt?: string;
   seoTitle?: string;
   seoDescription?: string;
 }
+
+export type BannerTextAlignment = typeof BannerTextAlignment[keyof typeof BannerTextAlignment];
+
+
+export const BannerTextAlignment = {
+  right: 'right',
+  center: 'center',
+  left: 'left',
+} as const;
 
 export interface Banner {
   id: number;
@@ -618,27 +636,76 @@ export interface Banner {
   /** @nullable */
   subtitleAr?: string | null;
   /** @nullable */
+  badgeText?: string | null;
+  /** @nullable */
+  primaryButtonText?: string | null;
+  /** @nullable */
+  primaryButtonUrl?: string | null;
+  /** @nullable */
+  secondaryButtonText?: string | null;
+  /** @nullable */
+  secondaryButtonUrl?: string | null;
+  textAlignment: BannerTextAlignment;
+  /** @nullable */
   linkUrl?: string | null;
   sortOrder: number;
   isActive: boolean;
+  /** @nullable */
+  startAt?: string | null;
+  /** @nullable */
+  endAt?: string | null;
 }
+
+export type BannerInputTextAlignment = typeof BannerInputTextAlignment[keyof typeof BannerInputTextAlignment];
+
+
+export const BannerInputTextAlignment = {
+  right: 'right',
+  center: 'center',
+  left: 'left',
+} as const;
 
 export interface BannerInput {
   imageUrl: string;
   titleAr?: string;
   subtitleAr?: string;
+  badgeText?: string;
+  primaryButtonText?: string;
+  primaryButtonUrl?: string;
+  secondaryButtonText?: string;
+  secondaryButtonUrl?: string;
+  textAlignment?: BannerInputTextAlignment;
   linkUrl?: string;
   sortOrder?: number;
   isActive?: boolean;
+  startAt?: string;
+  endAt?: string;
 }
+
+export type BannerUpdateTextAlignment = typeof BannerUpdateTextAlignment[keyof typeof BannerUpdateTextAlignment];
+
+
+export const BannerUpdateTextAlignment = {
+  right: 'right',
+  center: 'center',
+  left: 'left',
+} as const;
 
 export interface BannerUpdate {
   imageUrl?: string;
   titleAr?: string;
   subtitleAr?: string;
+  badgeText?: string;
+  primaryButtonText?: string;
+  primaryButtonUrl?: string;
+  secondaryButtonText?: string;
+  secondaryButtonUrl?: string;
+  textAlignment?: BannerUpdateTextAlignment;
   linkUrl?: string;
   sortOrder?: number;
   isActive?: boolean;
+  startAt?: string;
+  endAt?: string;
 }
 
 export interface HomepageContent {

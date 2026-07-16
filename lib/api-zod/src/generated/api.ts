@@ -1074,6 +1074,9 @@ export const GetSiteSettingsResponse = zod.object({
   "telegramUrl": zod.string().nullish(),
   "announcementBar": zod.string().nullish(),
   "announcementEnabled": zod.boolean().optional(),
+  "announcementLink": zod.string().nullish(),
+  "announcementStartAt": zod.coerce.date().nullish(),
+  "announcementEndAt": zod.coerce.date().nullish(),
   "seoTitle": zod.string().nullish(),
   "seoDescription": zod.string().nullish()
 })
@@ -1084,9 +1087,17 @@ export const ListBannersResponseItem = zod.object({
   "imageUrl": zod.string(),
   "titleAr": zod.string().nullish(),
   "subtitleAr": zod.string().nullish(),
+  "badgeText": zod.string().nullish(),
+  "primaryButtonText": zod.string().nullish(),
+  "primaryButtonUrl": zod.string().nullish(),
+  "secondaryButtonText": zod.string().nullish(),
+  "secondaryButtonUrl": zod.string().nullish(),
+  "textAlignment": zod.enum(['right', 'center', 'left']),
   "linkUrl": zod.string().nullish(),
   "sortOrder": zod.number(),
-  "isActive": zod.boolean()
+  "isActive": zod.boolean(),
+  "startAt": zod.coerce.date().nullish(),
+  "endAt": zod.coerce.date().nullish()
 })
 export const ListBannersResponse = zod.array(ListBannersResponseItem)
 
@@ -1097,9 +1108,17 @@ export const GetHomepageContentResponse = zod.object({
   "imageUrl": zod.string(),
   "titleAr": zod.string().nullish(),
   "subtitleAr": zod.string().nullish(),
+  "badgeText": zod.string().nullish(),
+  "primaryButtonText": zod.string().nullish(),
+  "primaryButtonUrl": zod.string().nullish(),
+  "secondaryButtonText": zod.string().nullish(),
+  "secondaryButtonUrl": zod.string().nullish(),
+  "textAlignment": zod.enum(['right', 'center', 'left']),
   "linkUrl": zod.string().nullish(),
   "sortOrder": zod.number(),
-  "isActive": zod.boolean()
+  "isActive": zod.boolean(),
+  "startAt": zod.coerce.date().nullish(),
+  "endAt": zod.coerce.date().nullish()
 })).optional(),
   "featuredProducts": zod.array(zod.object({
   "id": zod.number(),
@@ -1368,6 +1387,9 @@ export const GetHomepageContentResponse = zod.object({
   "telegramUrl": zod.string().nullish(),
   "announcementBar": zod.string().nullish(),
   "announcementEnabled": zod.boolean().optional(),
+  "announcementLink": zod.string().nullish(),
+  "announcementStartAt": zod.coerce.date().nullish(),
+  "announcementEndAt": zod.coerce.date().nullish(),
   "seoTitle": zod.string().nullish(),
   "seoDescription": zod.string().nullish()
 }).optional()
@@ -2505,6 +2527,9 @@ export const AdminUpdateSiteSettingsBody = zod.object({
   "telegramUrl": zod.string().optional(),
   "announcementBar": zod.string().optional(),
   "announcementEnabled": zod.boolean().optional(),
+  "announcementLink": zod.string().optional(),
+  "announcementStartAt": zod.coerce.date().optional(),
+  "announcementEndAt": zod.coerce.date().optional(),
   "seoTitle": zod.string().optional(),
   "seoDescription": zod.string().optional()
 })
@@ -2523,6 +2548,9 @@ export const AdminUpdateSiteSettingsResponse = zod.object({
   "telegramUrl": zod.string().nullish(),
   "announcementBar": zod.string().nullish(),
   "announcementEnabled": zod.boolean().optional(),
+  "announcementLink": zod.string().nullish(),
+  "announcementStartAt": zod.coerce.date().nullish(),
+  "announcementEndAt": zod.coerce.date().nullish(),
   "seoTitle": zod.string().nullish(),
   "seoDescription": zod.string().nullish()
 })
@@ -2533,9 +2561,17 @@ export const AdminListBannersResponseItem = zod.object({
   "imageUrl": zod.string(),
   "titleAr": zod.string().nullish(),
   "subtitleAr": zod.string().nullish(),
+  "badgeText": zod.string().nullish(),
+  "primaryButtonText": zod.string().nullish(),
+  "primaryButtonUrl": zod.string().nullish(),
+  "secondaryButtonText": zod.string().nullish(),
+  "secondaryButtonUrl": zod.string().nullish(),
+  "textAlignment": zod.enum(['right', 'center', 'left']),
   "linkUrl": zod.string().nullish(),
   "sortOrder": zod.number(),
-  "isActive": zod.boolean()
+  "isActive": zod.boolean(),
+  "startAt": zod.coerce.date().nullish(),
+  "endAt": zod.coerce.date().nullish()
 })
 export const AdminListBannersResponse = zod.array(AdminListBannersResponseItem)
 
@@ -2544,9 +2580,17 @@ export const AdminCreateBannerBody = zod.object({
   "imageUrl": zod.string(),
   "titleAr": zod.string().optional(),
   "subtitleAr": zod.string().optional(),
+  "badgeText": zod.string().optional(),
+  "primaryButtonText": zod.string().optional(),
+  "primaryButtonUrl": zod.string().optional(),
+  "secondaryButtonText": zod.string().optional(),
+  "secondaryButtonUrl": zod.string().optional(),
+  "textAlignment": zod.enum(['right', 'center', 'left']).optional(),
   "linkUrl": zod.string().optional(),
   "sortOrder": zod.number().optional(),
-  "isActive": zod.boolean().optional()
+  "isActive": zod.boolean().optional(),
+  "startAt": zod.coerce.date().optional(),
+  "endAt": zod.coerce.date().optional()
 })
 
 export const AdminCreateBannerResponse = zod.object({
@@ -2554,9 +2598,17 @@ export const AdminCreateBannerResponse = zod.object({
   "imageUrl": zod.string(),
   "titleAr": zod.string().nullish(),
   "subtitleAr": zod.string().nullish(),
+  "badgeText": zod.string().nullish(),
+  "primaryButtonText": zod.string().nullish(),
+  "primaryButtonUrl": zod.string().nullish(),
+  "secondaryButtonText": zod.string().nullish(),
+  "secondaryButtonUrl": zod.string().nullish(),
+  "textAlignment": zod.enum(['right', 'center', 'left']),
   "linkUrl": zod.string().nullish(),
   "sortOrder": zod.number(),
-  "isActive": zod.boolean()
+  "isActive": zod.boolean(),
+  "startAt": zod.coerce.date().nullish(),
+  "endAt": zod.coerce.date().nullish()
 })
 
 
@@ -2568,9 +2620,17 @@ export const AdminUpdateBannerBody = zod.object({
   "imageUrl": zod.string().optional(),
   "titleAr": zod.string().optional(),
   "subtitleAr": zod.string().optional(),
+  "badgeText": zod.string().optional(),
+  "primaryButtonText": zod.string().optional(),
+  "primaryButtonUrl": zod.string().optional(),
+  "secondaryButtonText": zod.string().optional(),
+  "secondaryButtonUrl": zod.string().optional(),
+  "textAlignment": zod.enum(['right', 'center', 'left']).optional(),
   "linkUrl": zod.string().optional(),
   "sortOrder": zod.number().optional(),
-  "isActive": zod.boolean().optional()
+  "isActive": zod.boolean().optional(),
+  "startAt": zod.coerce.date().optional(),
+  "endAt": zod.coerce.date().optional()
 })
 
 export const AdminUpdateBannerResponse = zod.object({
@@ -2578,9 +2638,17 @@ export const AdminUpdateBannerResponse = zod.object({
   "imageUrl": zod.string(),
   "titleAr": zod.string().nullish(),
   "subtitleAr": zod.string().nullish(),
+  "badgeText": zod.string().nullish(),
+  "primaryButtonText": zod.string().nullish(),
+  "primaryButtonUrl": zod.string().nullish(),
+  "secondaryButtonText": zod.string().nullish(),
+  "secondaryButtonUrl": zod.string().nullish(),
+  "textAlignment": zod.enum(['right', 'center', 'left']),
   "linkUrl": zod.string().nullish(),
   "sortOrder": zod.number(),
-  "isActive": zod.boolean()
+  "isActive": zod.boolean(),
+  "startAt": zod.coerce.date().nullish(),
+  "endAt": zod.coerce.date().nullish()
 })
 
 

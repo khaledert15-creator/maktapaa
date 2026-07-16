@@ -35,7 +35,7 @@ const AdminInventory = lazy(() => import("@/pages/AdminSections").then(module =>
 const AdminCoupons = lazy(() => import("@/pages/AdminOperations").then(module => ({ default: module.AdminCoupons })));
 const AdminShipping = lazy(() => import("@/pages/AdminOperations").then(module => ({ default: module.AdminShipping })));
 const AdminClassifications = lazy(() => import("@/pages/AdminOperations").then(module => ({ default: module.AdminClassifications })));
-const AdminContent = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminContent })));
+const AdminContent = lazy(() => import("@/pages/AdminContent"));
 const AdminReports = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminReports })));
 const AdminEmployees = lazy(() => import("@/pages/AdminSections").then(module => ({ default: module.AdminEmployees })));
 const NotFound = lazy(() => import("@/pages/not-found"));
