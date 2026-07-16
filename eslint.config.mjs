@@ -9,7 +9,7 @@ export default tseslint.config(
     ],
   },
   eslint.configs.recommended,
-  { files: ["**/*.{js,mjs,cjs}"], languageOptions: { globals: { console: "readonly", process: "readonly" } } },
+  { files: ["**/*.{js,mjs,cjs}"], languageOptions: { globals: { console: "readonly", process: "readonly", fetch: "readonly", setTimeout: "readonly" } } },
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx,mts,cts}"],

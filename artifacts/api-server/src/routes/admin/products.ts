@@ -180,7 +180,12 @@ router.post("/admin/products/:id/images", requireAdminPermission("products.image
   const created = [];
   for (let index = 0; index < files.length; index += 1) {
     const stored = await imageStorage.saveImage(files[index].buffer);
-    const [image] = await db.insert(productImagesTable).values({ productId: id, url: stored.url, storageKey: stored.storageKey, altText: metadata.altText || null, sortOrder: existing.length + index, isPrimary: existing.length === 0 && index === 0 }).returning();
+    const [image] = await db.insert(productImagesTable).values({
+      productId: id, url: stored.url, storageKey: stored.storageKey,
+      thumbnailUrl: stored.variants.thumbnail.url, mediumUrl: stored.variants.medium.url, largeUrl: stored.variants.large.url,
+      width: stored.width, height: stored.height, sizeBytes: stored.size, mimeType: stored.mimeType, variants: stored.variants,
+      altText: metadata.altText || null, sortOrder: existing.length + index, isPrimary: existing.length === 0 && index === 0,
+    }).returning();
     created.push(image);
   }
   const primary = created.find(image => image.isPrimary);

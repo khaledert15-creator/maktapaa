@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, bannersTable, faqsTable, siteSettingsTable, stagesTable, gradesTable, subjectsTable, publishersTable, categoriesTable, productsTable } from "@workspace/db";
-import { eq, asc, and, desc, isNull, or, sql } from "drizzle-orm";
+import { eq, asc, inArray, sql } from "drizzle-orm";
 import { enrichProductSummaries } from "../services/catalog";
 
 const router: IRouter = Router();
@@ -50,35 +50,41 @@ router.get("/content/faqs", async (_req, res): Promise<void> => {
 });
 
 router.get("/content/homepage", async (_req, res): Promise<void> => {
-  const activeProduct = and(eq(productsTable.status, "active"), isNull(productsTable.deletedAt));
-  const [banners, stages, grades, subjects, publishers, categories, featuredProducts, bestSellers, newArrivals, revisionBooks, offers, bundles, freeShippingProducts, recommendedProducts, settings] = await Promise.all([
+  const [banners, stages, grades, subjects, publishers, categories, productSections, settings] = await Promise.all([
     db.select().from(bannersTable).where(eq(bannersTable.isActive, true)).orderBy(asc(bannersTable.sortOrder)),
     db.select().from(stagesTable).where(eq(stagesTable.isActive, true)).orderBy(asc(stagesTable.sortOrder)),
     db.select().from(gradesTable).where(eq(gradesTable.isActive, true)).orderBy(asc(gradesTable.sortOrder)),
     db.select().from(subjectsTable).where(eq(subjectsTable.isActive, true)).orderBy(asc(subjectsTable.nameAr)),
     db.select().from(publishersTable).where(eq(publishersTable.isActive, true)).orderBy(asc(publishersTable.nameAr)),
     db.select().from(categoriesTable).where(eq(categoriesTable.isActive, true)).orderBy(asc(categoriesTable.sortOrder)),
-    db.select().from(productsTable).where(and(eq(productsTable.isFeatured, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).limit(8),
-    db.select().from(productsTable).where(and(eq(productsTable.isBestSeller, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.salesCount)).limit(12),
-    db.select().from(productsTable).where(and(eq(productsTable.isNew, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.createdAt)).limit(8),
-    db.select().from(productsTable).where(and(eq(productsTable.isRevision, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).limit(8),
-    db.select().from(productsTable).where(and(or(eq(productsTable.isOffer, true), sql`${productsTable.oldPrice} > ${productsTable.price}`), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.updatedAt)).limit(8),
-    db.select().from(productsTable).where(and(eq(productsTable.isBundle, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.updatedAt)).limit(8),
-    db.select().from(productsTable).where(and(eq(productsTable.freeShipping, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.updatedAt)).limit(8),
-    db.select().from(productsTable).where(activeProduct).orderBy(desc(productsTable.sortOrder), desc(productsTable.salesCount), desc(productsTable.updatedAt)).limit(8),
+    db.execute<{ section: string; id: number }>(sql`
+      (select 'featured'::text as section, id from products where is_featured = true and status = 'active' and deleted_at is null order by sort_order desc limit 8)
+      union all (select 'best'::text, id from products where is_best_seller = true and status = 'active' and deleted_at is null order by sales_count desc limit 12)
+      union all (select 'new'::text, id from products where is_new = true and status = 'active' and deleted_at is null order by created_at desc limit 8)
+      union all (select 'revision'::text, id from products where is_revision = true and status = 'active' and deleted_at is null order by sort_order desc limit 8)
+      union all (select 'offers'::text, id from products where (is_offer = true or old_price > price) and status = 'active' and deleted_at is null order by updated_at desc limit 8)
+      union all (select 'bundles'::text, id from products where is_bundle = true and status = 'active' and deleted_at is null order by updated_at desc limit 8)
+      union all (select 'free_shipping'::text, id from products where free_shipping = true and status = 'active' and deleted_at is null order by updated_at desc limit 8)
+      union all (select 'recommended'::text, id from products where status = 'active' and deleted_at is null order by sort_order desc, sales_count desc, updated_at desc limit 8)
+    `),
     getSettings(),
   ]);
 
-  const [featured, best, latest, revision, offerProducts, productBundles, freeShipping, recommended] = await Promise.all([
-    enrichProductSummaries(featuredProducts),
-    enrichProductSummaries(bestSellers),
-    enrichProductSummaries(newArrivals),
-    enrichProductSummaries(revisionBooks),
-    enrichProductSummaries(offers),
-    enrichProductSummaries(bundles),
-    enrichProductSummaries(freeShippingProducts),
-    enrichProductSummaries(recommendedProducts),
-  ]);
+  const sectionIds = productSections.rows.map(row => Number(row.id));
+  const allProducts = sectionIds.length ? await db.select().from(productsTable).where(inArray(productsTable.id, [...new Set(sectionIds)])) : [];
+  const enrichedProducts = await enrichProductSummaries(allProducts);
+  const enrichedMap = new Map(enrichedProducts.map(product => [product.id, product]));
+  const select = (section: string) => productSections.rows.filter(row => row.section === section).flatMap(row => {
+    const product = enrichedMap.get(Number(row.id)); return product ? [product] : [];
+  });
+  const featured = select("featured");
+  const best = select("best");
+  const latest = select("new");
+  const revision = select("revision");
+  const offerProducts = select("offers");
+  const productBundles = select("bundles");
+  const freeShipping = select("free_shipping");
+  const recommended = select("recommended");
 
   res.json({
     banners, stages, grades, subjects, publishers, categories,

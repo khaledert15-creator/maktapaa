@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, numeric, pgEnum, check, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, numeric, pgEnum, check, uniqueIndex, index, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -65,6 +65,13 @@ export const productsTable = pgTable("products", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, table => [
+  index("products_status_created_idx").on(table.status, table.createdAt),
+  index("products_category_status_idx").on(table.categoryId, table.status),
+  index("products_publisher_status_idx").on(table.publisherId, table.status),
+  index("products_grade_status_idx").on(table.gradeId, table.status),
+  index("products_subject_status_idx").on(table.subjectId, table.status),
+  index("products_stage_status_idx").on(table.stageId, table.status),
+  index("products_status_sales_idx").on(table.status, table.salesCount),
   check("products_price_non_negative", sql`${table.price} >= 0`),
   check("products_old_price_non_negative", sql`${table.oldPrice} IS NULL OR ${table.oldPrice} >= 0`),
   check("products_purchase_price_non_negative", sql`${table.purchasePrice} IS NULL OR ${table.purchasePrice} >= 0`),
@@ -78,12 +85,21 @@ export const productImagesTable = pgTable("product_images", {
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
   storageKey: text("storage_key").notNull().unique(),
+  thumbnailUrl: text("thumbnail_url"),
+  mediumUrl: text("medium_url"),
+  largeUrl: text("large_url"),
+  width: integer("width"),
+  height: integer("height"),
+  sizeBytes: integer("size_bytes"),
+  mimeType: text("mime_type"),
+  variants: jsonb("variants").$type<Record<string, { url: string; width: number; height: number; size: number }>>(),
   altText: text("alt_text"),
   sortOrder: integer("sort_order").notNull().default(0),
   isPrimary: boolean("is_primary").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("product_images_one_primary_per_product").on(table.productId).where(sql`${table.isPrimary} = true`),
+  index("product_images_product_sort_idx").on(table.productId, table.sortOrder),
 ]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({ id: true, createdAt: true, updatedAt: true });

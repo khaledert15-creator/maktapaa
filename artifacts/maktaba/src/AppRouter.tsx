@@ -13,6 +13,8 @@ const Search = lazy(() => import("@/pages/Search"));
 const Account = lazy(() => import("@/pages/Account"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const TrackOrder = lazy(() => import("@/pages/TrackOrder"));
 const OrderDetail = lazy(() => import("@/pages/OrderDetail"));
 const InformationPage = lazy(() => import("@/pages/InformationPage"));
@@ -20,6 +22,8 @@ const OffersPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ d
 const PublishersPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.PublishersPage })));
 const CategoriesPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.CategoriesPage })));
 const StagesPage = lazy(() => import("@/pages/ExplorePages").then(module => ({ default: module.StagesPage })));
+const CategoryCatalogPage = lazy(() => import("@/pages/EntityCatalogPage").then(module => ({ default: module.CategoryCatalogPage })));
+const PublisherCatalogPage = lazy(() => import("@/pages/EntityCatalogPage").then(module => ({ default: module.PublisherCatalogPage })));
 const AdminLogin = lazy(() => import("@/pages/AdminLogin"));
 const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
@@ -168,6 +172,8 @@ export function AppRouter() {
           </CustomerLayout>
         )}
       </Route>
+      <Route path="/forgot-password">{() => <CustomerLayout><ForgotPassword /></CustomerLayout>}</Route>
+      <Route path="/reset-password">{() => <CustomerLayout><ResetPassword /></CustomerLayout>}</Route>
       <Route path="/account">
         {() => (
           <CustomerLayout>
@@ -180,6 +186,8 @@ export function AppRouter() {
       <Route path="/offers">{() => <CustomerLayout><OffersPage /></CustomerLayout>}</Route>
       <Route path="/publishers">{() => <CustomerLayout><PublishersPage /></CustomerLayout>}</Route>
       <Route path="/categories">{() => <CustomerLayout><CategoriesPage /></CustomerLayout>}</Route>
+      <Route path="/category/:slug">{() => <CustomerLayout><CategoryCatalogPage /></CustomerLayout>}</Route>
+      <Route path="/publisher/:reference">{() => <CustomerLayout><PublisherCatalogPage /></CustomerLayout>}</Route>
       <Route path="/stages">{() => <CustomerLayout><StagesPage /></CustomerLayout>}</Route>
       {["/about", "/contact", "/faq", "/shipping-policy", "/return-policy", "/privacy", "/terms"].map(path => <Route key={path} path={path}>{() => <CustomerLayout><InformationPage /></CustomerLayout>}</Route>)}
       <Route>

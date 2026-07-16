@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, customersTable, ordersTable } from "@workspace/db";
-import { eq, ilike, sql } from "drizzle-orm";
+import { eq, ilike, inArray, sql } from "drizzle-orm";
 import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 import { parseBody } from "../../lib/validation";
 import { z } from "@workspace/api-zod";
@@ -21,21 +21,27 @@ router.get("/admin/customers", requireAdminPermission("customers.view"), async (
     db.select({ count: sql<number>`count(*)::int` }).from(customersTable).where(where),
   ]);
 
-  const enriched = await Promise.all(customers.map(async (c) => {
-    const [stats] = await db.select({
-      totalOrders: sql<number>`count(*)::int`,
-      totalSpend: sql<number>`coalesce(sum(total::numeric), 0)`,
-      avgOrderValue: sql<number>`coalesce(avg(total::numeric), 0)`,
-    }).from(ordersTable).where(eq(ordersTable.customerId, c.id));
-    const [lastOrder] = await db.select({ createdAt: ordersTable.createdAt }).from(ordersTable)
-      .where(eq(ordersTable.customerId, c.id)).orderBy(sql`created_at desc`).limit(1);
+  const customerIds = customers.map(customer => customer.id);
+  const aggregateRows = customerIds.length ? await db.select({
+    customerId: ordersTable.customerId,
+    totalOrders: sql<number>`count(*)::int`,
+    totalSpend: sql<string>`coalesce(sum(${ordersTable.total}::numeric), 0)::text`,
+    avgOrderValue: sql<string>`coalesce(avg(${ordersTable.total}::numeric), 0)::text`,
+    lastOrderDate: sql<Date | null>`max(${ordersTable.createdAt})`,
+  }).from(ordersTable)
+    .where(inArray(ordersTable.customerId, customerIds))
+    .groupBy(ordersTable.customerId) : [];
+  const aggregateMap = new Map(aggregateRows.map(row => [row.customerId, row]));
+
+  const enriched = customers.map((c) => {
+    const stats = aggregateMap.get(c.id);
     return {
       id: c.id, name: c.name, email: c.email, mobile: c.mobile, isBlocked: c.isBlocked,
-      totalOrders: stats.totalOrders, totalSpend: Number(stats.totalSpend),
-      avgOrderValue: Number(stats.avgOrderValue),
-      lastOrderDate: lastOrder?.createdAt || null, internalNotes: c.internalNotes, createdAt: c.createdAt,
+      totalOrders: stats?.totalOrders ?? 0, totalSpend: Number(stats?.totalSpend ?? 0),
+      avgOrderValue: Number(stats?.avgOrderValue ?? 0),
+      lastOrderDate: stats?.lastOrderDate ?? null, internalNotes: c.internalNotes, createdAt: c.createdAt,
     };
-  }));
+  });
 
   res.json({ items: enriched, total: count, page: pageNum, limit: limitNum });
 });

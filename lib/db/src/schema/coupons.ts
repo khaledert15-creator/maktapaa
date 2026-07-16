@@ -24,6 +24,7 @@ export const couponsTable = pgTable("coupons", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("coupons_code_case_insensitive_unique").on(sql`lower(${table.code})`),
+  index("coupons_active_dates_idx").on(table.isActive, table.startDate, table.endDate),
   check("coupons_value_non_negative", sql`${table.value} >= 0`),
   check("coupons_percentage_range", sql`${table.type} <> 'percentage' OR ${table.value} <= 100`),
   check("coupons_min_order_non_negative", sql`${table.minOrderAmount} IS NULL OR ${table.minOrderAmount} >= 0`),

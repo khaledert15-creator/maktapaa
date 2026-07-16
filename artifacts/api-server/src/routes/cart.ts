@@ -36,12 +36,11 @@ async function buildCartResponse(cart: CartSession) {
     return { items: [], subtotal: 0, discount: 0, shippingCost: 0, total: 0, couponCode: null, couponDiscount: 0, governorateId: null, notes: null };
   }
 
-  const productIds = cart.items.map(i => i.productId);
-  const productMap: Record<number, typeof productsTable.$inferSelect> = {};
-  for (const pid of productIds) {
-    const [p] = await db.select().from(productsTable).where(eq(productsTable.id, pid));
-    if (p) productMap[pid] = p;
-  }
+  const productIds = [...new Set(cart.items.map(item => item.productId))];
+  const productRows = await db.select().from(productsTable).where(inArray(productsTable.id, productIds));
+  const productMap: Record<number, typeof productsTable.$inferSelect> = Object.fromEntries(
+    productRows.map(product => [product.id, product]),
+  );
 
   let subtotal = 0;
   const items = cart.items.map(item => {

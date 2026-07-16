@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /admin/
-Sitemap: https://maktapaa.com/sitemap.xml
+Disallow: /account
+Disallow: /checkout

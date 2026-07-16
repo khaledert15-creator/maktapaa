@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, customersTable, stockMovementsTable, favoritesTable, addressesTable } from "@workspace/db";
-import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 import { calculateShipping } from "../services/shipping";
 import { enrichProductSummaries } from "../services/catalog";
 import { CouponValidationError, recordCouponUsage, validateCoupon } from "../services/coupons";
@@ -81,15 +81,19 @@ router.post("/orders", orderRateLimit, async (req, res): Promise<void> => {
   const [gov] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!gov) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
 
-  // Validate stock and compute totals
+  // Load the complete cart in one query. Stock is checked again atomically in
+  // the transaction below so this read is only used for validation and totals.
   let subtotal = 0;
   const resolvedItems: { product: typeof productsTable.$inferSelect; quantity: number }[] = [];
+  const requestedProductIds = [...new Set(cartItems.map(item => item.productId))];
+  const productRows = await db.select().from(productsTable).where(inArray(productsTable.id, requestedProductIds));
+  const productMap = new Map(productRows.map(product => [product.id, product]));
   for (const ci of cartItems) {
     if (!Number.isInteger(ci.productId) || !Number.isInteger(ci.quantity) || ci.quantity < 1 || ci.quantity > 99) {
       res.status(400).json({ error: "بيانات كمية المنتج غير صحيحة" });
       return;
     }
-    const [product] = await db.select().from(productsTable).where(eq(productsTable.id, ci.productId));
+    const product = productMap.get(ci.productId);
     if (!product || product.status !== "active") {
       res.status(400).json({ error: `المنتج غير متاح` });
       return;
@@ -240,13 +244,16 @@ router.get("/orders/my", async (req, res): Promise<void> => {
       .where(eq(ordersTable.customerId, req.session.customerId as number)),
   ]);
 
-  const orderData = await Promise.all(orders.map(async (o) => {
-    const [items, history] = await Promise.all([
-      db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, o.id)),
-      db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, o.id)).orderBy(desc(orderStatusHistoryTable.createdAt)),
-    ]);
-    return mapOrder(o, items, history);
-  }));
+  const orderIds = orders.map(order => order.id);
+  const [allItems, allHistory] = orderIds.length ? await Promise.all([
+    db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds)),
+    db.select().from(orderStatusHistoryTable).where(inArray(orderStatusHistoryTable.orderId, orderIds)).orderBy(desc(orderStatusHistoryTable.createdAt)),
+  ]) : [[], []];
+  const orderData = orders.map(order => mapOrder(
+    order,
+    allItems.filter(item => item.orderId === order.id),
+    allHistory.filter(history => history.orderId === order.id),
+  ));
 
   res.json({ items: orderData, total: count, page: pageNum, limit: limitNum });
 });

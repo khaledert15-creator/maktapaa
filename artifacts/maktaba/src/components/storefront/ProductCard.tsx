@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 export function ProductCard({ product, isFavorite = false }: { product: ProductSummary; isFavorite?: boolean }) {
+  const responsive = product as ProductSummary & { coverImageSrcSet?: string | null; coverImageWidth?: number | null; coverImageHeight?: number | null };
   const { customer } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -37,7 +38,7 @@ export function ProductCard({ product, isFavorite = false }: { product: ProductS
     <Card className="group relative flex h-full flex-col overflow-hidden rounded-2xl border-border/70 bg-card transition duration-300 hover:-translate-y-1 hover:border-secondary/50 hover:shadow-xl">
       <Link href={`/product/${product.slug}`} className="relative block aspect-[3/4] overflow-hidden bg-gradient-to-br from-slate-50 to-blue-50">
         {product.coverImage ? (
-          <img src={product.coverImage} alt={product.nameAr} width="360" height="480" loading="lazy" decoding="async" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+          <img src={product.coverImage} srcSet={responsive.coverImageSrcSet || undefined} sizes="(max-width: 640px) 50vw, (max-width: 1280px) 25vw, 240px" alt={product.nameAr} width={responsive.coverImageWidth || 360} height={responsive.coverImageHeight || 480} loading="lazy" decoding="async" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-5 text-center text-primary/35">
             <BookOpen className="h-14 w-14" />

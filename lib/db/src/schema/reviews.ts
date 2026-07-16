@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, uniqueIndex, pgEnum, boolean, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, uniqueIndex, pgEnum, boolean, check, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -18,7 +18,11 @@ export const reviewsTable = pgTable("reviews", {
   moderationStatus: reviewModerationStatusEnum("moderation_status").notNull().default("pending"),
   verifiedPurchase: boolean("verified_purchase").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, table => [check("reviews_rating_range", sql`${table.rating} BETWEEN 1 AND 5`)]);
+}, table => [
+  check("reviews_rating_range", sql`${table.rating} BETWEEN 1 AND 5`),
+  index("reviews_product_moderation_created_idx").on(table.productId, table.moderationStatus, table.createdAt),
+  index("reviews_customer_idx").on(table.customerId),
+]);
 
 export const favoritesTable = pgTable("favorites", {
   id: serial("id").primaryKey(),

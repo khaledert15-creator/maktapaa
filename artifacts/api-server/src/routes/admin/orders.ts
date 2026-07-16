@@ -57,15 +57,15 @@ router.get("/admin/orders", requireAdminPermission("orders.view"), async (req, r
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [items, [{ count }]] = await Promise.all([
-    db.select().from(ordersTable).where(whereClause).orderBy(desc(ordersTable.createdAt)).limit(limitNum).offset(offset),
+    db.select({ order: ordersTable, itemCount: sql<number>`(select coalesce(sum(quantity), 0)::int from order_items where order_id = ${ordersTable.id})` }).from(ordersTable).where(whereClause).orderBy(desc(ordersTable.createdAt)).limit(limitNum).offset(offset),
     db.select({ count: sql<number>`count(*)::int` }).from(ordersTable).where(whereClause),
   ]);
 
   res.json({
-    items: items.map(o => ({
+    items: items.map(({ order: o, itemCount }) => ({
       id: o.id, orderNumber: o.orderNumber, customerName: o.customerName, mobile: o.mobile,
       governorate: o.governorateName, status: o.status, paymentStatus: o.paymentStatus,
-      paymentMethod: o.paymentMethod, total: Number(o.total), itemCount: 0, createdAt: o.createdAt,
+      paymentMethod: o.paymentMethod, total: Number(o.total), itemCount, createdAt: o.createdAt,
     })),
     total: count, page: pageNum, limit: limitNum,
   });

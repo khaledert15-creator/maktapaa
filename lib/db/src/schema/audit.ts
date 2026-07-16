@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, index } from "drizzle-orm/pg-core";
 
 export const auditLogsTable = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
@@ -12,6 +12,10 @@ export const auditLogsTable = pgTable("audit_logs", {
   afterData: jsonb("after_data").$type<Record<string, unknown>>(),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [
+  index("audit_logs_created_idx").on(table.createdAt),
+  index("audit_logs_entity_idx").on(table.entityType, table.entityId),
+  index("audit_logs_employee_created_idx").on(table.employeeId, table.createdAt),
+]);
 
 export type AuditLog = typeof auditLogsTable.$inferSelect;

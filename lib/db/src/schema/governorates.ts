@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, numeric, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, numeric, check, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -36,6 +36,7 @@ export const citiesTable = pgTable("cities", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, table => [
+  index("cities_governorate_active_idx").on(table.governorateId, table.isActive),
   check("cities_shipping_override_non_negative", sql`${table.shippingPriceOverride} IS NULL OR ${table.shippingPriceOverride} >= 0`),
   check("cities_surcharge_non_negative", sql`${table.surcharge} >= 0`),
 ]);

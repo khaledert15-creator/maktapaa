@@ -3,8 +3,8 @@ import {
   db, productsTable, stagesTable, gradesTable, subjectsTable, publishersTable,
   reviewsTable, categoriesTable, orderItemsTable, ordersTable,
 } from "@workspace/db";
-import { eq, and, gte, lte, ilike, or, desc, asc, isNull, sql, inArray } from "drizzle-orm";
-import { enrichProductSummaries, getProductGallery } from "../services/catalog";
+import { eq, and, gte, lte, lt, ilike, or, desc, asc, isNull, sql, inArray } from "drizzle-orm";
+import { enrichProductSummaries, getProductGallery, getProductGalleryRecords, imageSrcSet } from "../services/catalog";
 import { parseBody } from "../lib/validation";
 import { rateLimit } from "../lib/rate-limit";
 import { z } from "@workspace/api-zod";
@@ -18,7 +18,7 @@ router.get("/products", async (req, res): Promise<void> => {
   const {
     page = "1", limit = "24", q, stageId, gradeId, subjectId, publisherId, categoryId,
     educationType, bookType, author, schoolYear, minPrice, maxPrice, inStock, hasDiscount,
-    isBestSeller, isNew, isRevision, isBundle, isOffer, isFeatured, freeShipping, sortBy,
+    isBestSeller, isNew, isRevision, isBundle, isOffer, isFeatured, freeShipping, sortBy, cursor,
   } = req.query as Record<string, string>;
 
   const pageNum = Math.max(1, parseInt(page, 10));
@@ -57,6 +57,15 @@ router.get("/products", async (req, res): Promise<void> => {
   if (isOffer === "true") conditions.push(or(eq(productsTable.isOffer, true), sql`${productsTable.oldPrice} > ${productsTable.price}`) as ReturnType<typeof eq>);
   if (isFeatured === "true") conditions.push(eq(productsTable.isFeatured, true));
   if (freeShipping === "true") conditions.push(eq(productsTable.freeShipping, true));
+  if (cursor) {
+    if (sortBy && sortBy !== "newest") { res.status(400).json({ error: "Cursor pagination is supported with newest sorting only" }); return; }
+    try {
+      const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { createdAt: string; id: number };
+      const createdAt = new Date(decoded.createdAt);
+      if (!Number.isInteger(decoded.id) || Number.isNaN(createdAt.getTime())) throw new Error("invalid cursor");
+      conditions.push(or(lt(productsTable.createdAt, createdAt), and(eq(productsTable.createdAt, createdAt), lt(productsTable.id, decoded.id))) as ReturnType<typeof eq>);
+    } catch { res.status(400).json({ error: "Invalid pagination cursor" }); return; }
+  }
 
   let orderBy;
   switch (sortBy) {
@@ -65,18 +74,22 @@ router.get("/products", async (req, res): Promise<void> => {
     case "best_selling": orderBy = desc(productsTable.salesCount); break;
     case "discount": orderBy = desc(sql`case when ${productsTable.oldPrice} > 0 then ((${productsTable.oldPrice} - ${productsTable.price}) / ${productsTable.oldPrice}) else 0 end`); break;
     case "recommended": orderBy = desc(sql`(${productsTable.isFeatured}::int * 100000) + ${productsTable.salesCount} + (${productsTable.isBestSeller}::int * 10000)`); break;
-    case "newest": default: orderBy = desc(productsTable.createdAt); break;
+    case "newest": default: orderBy = [desc(productsTable.createdAt), desc(productsTable.id)]; break;
   }
 
   const whereClause = and(...conditions);
 
   const [items, [{ count }]] = await Promise.all([
-    db.select().from(productsTable).where(whereClause).orderBy(orderBy).limit(limitNum).offset(offset),
+    db.select().from(productsTable).where(whereClause).orderBy(...(Array.isArray(orderBy) ? orderBy : [orderBy])).limit(limitNum + (cursor ? 1 : 0)).offset(cursor ? 0 : offset),
     db.select({ count: sql<number>`count(*)::int` }).from(productsTable).where(whereClause),
   ]);
 
-  const enriched = await enrichProductSummaries(items);
-  res.json({ items: enriched, total: count, page: pageNum, limit: limitNum });
+  const hasMore = Boolean(cursor && items.length > limitNum);
+  const visibleItems = hasMore ? items.slice(0, limitNum) : items;
+  const last = visibleItems.at(-1);
+  const nextCursor = hasMore && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt.toISOString(), id: last.id })).toString("base64url") : null;
+  const enriched = await enrichProductSummaries(visibleItems);
+  res.json({ items: enriched, total: count, page: pageNum, limit: limitNum, nextCursor });
 });
 
 // Featured products
@@ -116,13 +129,14 @@ router.get("/products/:slug", async (req, res): Promise<void> => {
 
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
-  const [stage, grade, subject, publisher, reviews, gallery] = await Promise.all([
+  const [stage, grade, subject, publisher, reviews, gallery, galleryRecords] = await Promise.all([
     product.stageId ? db.select().from(stagesTable).where(eq(stagesTable.id, product.stageId)).then(r => r[0]) : null,
     product.gradeId ? db.select().from(gradesTable).where(eq(gradesTable.id, product.gradeId)).then(r => r[0]) : null,
     product.subjectId ? db.select().from(subjectsTable).where(eq(subjectsTable.id, product.subjectId)).then(r => r[0]) : null,
     product.publisherId ? db.select().from(publishersTable).where(eq(publishersTable.id, product.publisherId)).then(r => r[0]) : null,
     db.select().from(reviewsTable).where(and(eq(reviewsTable.productId, product.id), eq(reviewsTable.moderationStatus, "approved"))),
     getProductGallery(product),
+    getProductGalleryRecords(product),
   ]);
 
   const avgRating = reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null;
@@ -134,6 +148,10 @@ router.get("/products/:slug", async (req, res): Promise<void> => {
     id: product.id, nameAr: product.nameAr, nameEn: product.nameEn, slug: product.slug,
     descriptionShort: product.descriptionShort, descriptionFull: product.descriptionFull,
     coverImage: gallery[0] ?? product.coverImage, images: gallery,
+    imageVariants: galleryRecords.map(image => ({
+      url: image.url, srcSet: imageSrcSet(image), width: image.width, height: image.height,
+      thumbnailUrl: image.thumbnailUrl, mediumUrl: image.mediumUrl, largeUrl: image.largeUrl,
+    })),
     price: Number(product.price), oldPrice: product.oldPrice ? Number(product.oldPrice) : null,
     discountPercent, sku: product.sku, barcode: product.barcode,
     inStock: product.stockQuantity > 0, stockQuantity: product.stockQuantity,

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -74,7 +74,13 @@ export const ordersTable = pgTable("orders", {
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, table => [
+  index("orders_status_created_idx").on(table.status, table.createdAt),
+  index("orders_customer_created_idx").on(table.customerId, table.createdAt),
+  index("orders_mobile_created_idx").on(table.mobile, table.createdAt),
+  index("orders_governorate_created_idx").on(table.governorateId, table.createdAt),
+  index("orders_created_idx").on(table.createdAt),
+]);
 
 export const orderItemsTable = pgTable("order_items", {
   id: serial("id").primaryKey(),
@@ -86,7 +92,10 @@ export const orderItemsTable = pgTable("order_items", {
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
   discount: numeric("discount", { precision: 10, scale: 2 }).notNull().default("0"),
   subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
-});
+}, table => [
+  index("order_items_order_idx").on(table.orderId),
+  index("order_items_product_order_idx").on(table.productId, table.orderId),
+]);
 
 export const orderStatusHistoryTable = pgTable("order_status_history", {
   id: serial("id").primaryKey(),
@@ -96,7 +105,7 @@ export const orderStatusHistoryTable = pgTable("order_status_history", {
   employeeId: integer("employee_id"),
   employeeName: text("employee_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [index("order_status_history_order_created_idx").on(table.orderId, table.createdAt)]);
 
 export const cancellationRequestsTable = pgTable("cancellation_requests", {
   id: serial("id").primaryKey(),
@@ -111,6 +120,8 @@ export const cancellationRequestsTable = pgTable("cancellation_requests", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [
   uniqueIndex("cancellation_requests_one_pending_per_order").on(table.orderId).where(sql`${table.status} = 'pending'`),
+  index("cancellation_requests_order_created_idx").on(table.orderId, table.createdAt),
+  index("cancellation_requests_customer_created_idx").on(table.customerId, table.createdAt),
 ]);
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });

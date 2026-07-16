@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 
 async function seed() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_DEMO_SEED !== "true") throw new Error("Demo seed is disabled in production. Use the one-time admin bootstrap command instead.");
   console.log("🌱 Starting seed...");
 
   // Stages
@@ -125,7 +126,7 @@ async function seed() {
       permissions: [],
       isActive: true,
     });
-    console.log("✅ Admin user created: admin@maktaba.com / Admin@2025");
+    console.log("✅ Development admin fixture created");
   } else {
     console.log("✅ Admin user already exists");
   }

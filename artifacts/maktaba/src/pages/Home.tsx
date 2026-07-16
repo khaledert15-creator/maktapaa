@@ -24,6 +24,8 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [banners.length]);
   const banner = banners[bannerIndex];
+  const responsiveBanner = banner as typeof banner & { imageWidth?: number | null; imageHeight?: number | null; imageVariants?: Record<string, { url: string; width: number }> | null };
+  const bannerSrcSet = responsiveBanner?.imageVariants ? Object.values(responsiveBanner.imageVariants).map(image => `${image.url} ${image.width}w`).join(", ") : undefined;
   const recentlyViewed = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("maktaba_recently_viewed") || "[]") as ProductSummary[]; }
     catch { return []; }
@@ -37,7 +39,7 @@ export default function Home() {
       <Seo title={data.settings?.seoTitle || `${data.settings?.storeNameAr || "مكتبة دوت كوم"} | كتبك الدراسية في مكان واحد`} description={data.settings?.seoDescription} />
 
       <section className="relative bg-gradient-to-l from-slate-950 via-slate-900 to-blue-950 text-white">
-        {banner?.imageUrl && <img key={banner.id} src={banner.imageUrl} alt={banner.titleAr || "عرض مكتبة دوت كوم"} width="1600" height="650" fetchPriority="high" className="absolute inset-0 h-full w-full object-cover opacity-35" />}
+        {banner?.imageUrl && <img key={banner.id} src={banner.imageUrl} srcSet={bannerSrcSet} sizes="100vw" alt={banner.titleAr || "عرض مكتبة دوت كوم"} width={responsiveBanner.imageWidth || 1600} height={responsiveBanner.imageHeight || 650} fetchPriority="high" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-35" />}
         <div className="absolute inset-0 bg-gradient-to-l from-slate-950/95 via-slate-900/75 to-transparent" />
         <div className="container relative mx-auto grid min-h-[440px] items-center gap-8 px-4 py-14 md:grid-cols-[1.1fr_.9fr] md:py-20">
           <div className="max-w-2xl animate-in fade-in slide-in-from-bottom-3 duration-700">
@@ -71,7 +73,7 @@ export default function Home() {
       <ProductSection title="مقترحة لك" products={data.recommendedProducts?.length ? data.recommendedProducts : data.featuredProducts} href="/catalog?sortBy=recommended" />
       <ProductSection title="شاهدتها مؤخرًا" products={recentlyViewed} />
 
-      {!!data.publishers?.length && <section className="container mx-auto px-4 py-12"><div className="mb-6 text-center"><h2 className="text-3xl font-black">دور النشر</h2><p className="mt-2 text-muted-foreground">اختر دار النشر التي تثق بها</p></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">{data.publishers.slice(0, 12).map(publisher => <Link key={publisher.id} href={`/catalog?publisherId=${publisher.id}`} className="flex min-h-24 items-center justify-center rounded-2xl border bg-white p-4 text-center font-extrabold transition hover:-translate-y-1 hover:border-secondary hover:shadow-lg">{publisher.logo ? <img src={publisher.logo} alt={publisher.nameAr} loading="lazy" className="max-h-14 max-w-full object-contain" /> : publisher.nameAr}</Link>)}</div></section>}
+      {!!data.publishers?.length && <section className="container mx-auto px-4 py-12"><div className="mb-6 text-center"><h2 className="text-3xl font-black">دور النشر</h2><p className="mt-2 text-muted-foreground">اختر دار النشر التي تثق بها</p></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">{data.publishers.slice(0, 12).map(publisher => <Link key={publisher.id} href={`/publisher/${publisher.id}-${slugify(publisher.nameAr)}`} className="flex min-h-24 items-center justify-center rounded-2xl border bg-white p-4 text-center font-extrabold transition hover:-translate-y-1 hover:border-secondary hover:shadow-lg">{publisher.logo ? <img src={publisher.logo} alt={publisher.nameAr} loading="lazy" decoding="async" width="220" height="100" className="max-h-14 max-w-full object-contain" /> : publisher.nameAr}</Link>)}</div></section>}
     </div>
   );
 }
@@ -83,3 +85,5 @@ function ExploreStrip({ title, subtitle, items, compact = false }: { title: stri
 function HomeSkeleton() {
   return <div className="space-y-10 pb-12"><Skeleton className="h-[440px] w-full rounded-none" /><div className="container mx-auto grid grid-cols-2 gap-4 px-4 md:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div><div className="container mx-auto px-4"><Skeleton className="mb-6 h-9 w-64" /><div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5">{Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-96 rounded-2xl" />)}</div></div></div>;
 }
+
+function slugify(value: string) { return value.normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, ""); }

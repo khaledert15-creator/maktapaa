@@ -8,7 +8,7 @@ import app from "../app";
 import {
   auditLogsTable, cancellationRequestsTable, couponUsageTable, couponsTable, db,
   governoratesTable, orderItemsTable, ordersTable, pool, productsTable, reviewsTable,
-  stockMovementsTable, usersTable,
+  stockMovementsTable, usersTable, customersTable,
 } from "@workspace/db";
 import { CouponValidationError, validateCoupon } from "../services/coupons";
 import { OrderStateError, transitionOrderStatus } from "../services/order-state";
@@ -19,6 +19,7 @@ const createdUserIds: number[] = [];
 const createdProductIds: number[] = [];
 const createdOrderIds: number[] = [];
 const createdCouponIds: number[] = [];
+const createdCustomerIds: number[] = [];
 
 before(async () => {
   server = app.listen(0);
@@ -32,6 +33,7 @@ after(async () => {
   for (const id of createdCouponIds) await db.delete(couponsTable).where(eq(couponsTable.id, id));
   for (const id of createdOrderIds) await db.delete(ordersTable).where(eq(ordersTable.id, id));
   for (const id of createdProductIds) await db.delete(productsTable).where(eq(productsTable.id, id));
+  for (const id of createdCustomerIds) await db.delete(customersTable).where(eq(customersTable.id, id));
   for (const id of createdUserIds) await db.delete(usersTable).where(eq(usersTable.id, id));
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await pool.end();
@@ -173,4 +175,66 @@ test("concurrent cancellation approvals restore stock once and invalid state jum
   const invalidTransition = await request(`/api/admin/orders/${order.id}/status`, cookie, { method: "PATCH", body: JSON.stringify({ status: "delivered" }) });
   assert.equal(invalidTransition.status, 409);
   await assert.rejects(() => transitionOrderStatus({ orderId: order.id, targetStatus: "delivered", actor: { employeeId: adminCredentials.user.id } }), (error: unknown) => error instanceof OrderStateError && error.code === "INVALID_TRANSITION");
+});
+
+test("CORS, request limits, session regeneration, disabled accounts and password reset rate limits are enforced", async () => {
+  const allowed = await fetch(`${baseUrl}/api/healthz`, { headers: { origin: "http://localhost:5173" } });
+  assert.equal(allowed.status, 200);
+  assert.equal(allowed.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  const denied = await fetch(`${baseUrl}/api/healthz`, { headers: { origin: "https://localhost.attacker.example" } });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get("access-control-allow-origin"), null);
+
+  const oversized = await fetch(`${baseUrl}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "x@example.com", password: "x".repeat(1_100_000) }) });
+  assert.equal(oversized.status, 413);
+
+  const suffix = randomUUID();
+  const customerPassword = `Customer-${suffix}`;
+  const [customer] = await db.insert(customersTable).values({ name: "عميل جلسة", email: `session-${suffix}@example.test`, mobile: `01${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(0, 15), passwordHash: await bcrypt.hash(customerPassword, 12) }).returning();
+  createdCustomerIds.push(customer.id);
+  const cartResponse = await fetch(`${baseUrl}/api/cart`);
+  const anonymousCookie = cartResponse.headers.get("set-cookie")?.split(";", 1)[0] || "";
+  const customerLogin = await fetch(`${baseUrl}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json", cookie: anonymousCookie }, body: JSON.stringify({ email: customer.email, password: customerPassword }) });
+  assert.equal(customerLogin.status, 200);
+  const authenticatedCookie = customerLogin.headers.get("set-cookie")?.split(";", 1)[0] || "";
+  assert.ok(authenticatedCookie && authenticatedCookie !== anonymousCookie, "login regenerates the session identifier");
+
+  const employee = await createAdmin("warehouse", ["products.view"]);
+  const employeeCookie = await login(employee.user.email, employee.password);
+  await db.update(usersTable).set({ isActive: false }).where(eq(usersTable.id, employee.user.id));
+  assert.equal((await request("/api/admin/products", employeeCookie)).status, 401, "disabled employee session is rejected on its next request");
+
+  const resetBodies: string[] = [];
+  const resetStatuses: number[] = [];
+  for (const email of [customer.email!, `unknown-${suffix}@example.test`, `u2-${suffix}@example.test`, `u3-${suffix}@example.test`, `u4-${suffix}@example.test`, `u5-${suffix}@example.test`]) {
+    const response = await fetch(`${baseUrl}/api/auth/forgot-password`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+    resetStatuses.push(response.status); resetBodies.push(await response.text());
+  }
+  assert.equal(resetBodies[0], resetBodies[1], "forgot-password response does not disclose account existence");
+  assert.deepEqual(resetStatuses.slice(0, 5), [202, 202, 202, 202, 202]);
+  assert.equal(resetStatuses[5], 429);
+});
+
+test("SEO product rendering returns metadata, structured data, dynamic sitemap and a real 404", async () => {
+  const suffix = randomUUID();
+  const [product] = await db.insert(productsTable).values({ nameAr: `كتاب SEO ${suffix}`, slug: `seo-${suffix}`, descriptionShort: "وصف عربي حقيقي للكتاب", price: "75", stockQuantity: 4, status: "active" }).returning();
+  createdProductIds.push(product.id);
+  const response = await fetch(`${baseUrl}/product/${product.slug}`);
+  const document = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(document, new RegExp(product.nameAr));
+  assert.match(document, /rel="canonical"/);
+  assert.match(document, /property="og:url"/);
+  assert.match(document, /application\/ld\+json/);
+  assert.match(document, /"@type":"Product"/);
+  assert.match(document, /"@type":"BreadcrumbList"/);
+
+  const missing = await fetch(`${baseUrl}/product/not-found-${suffix}`);
+  assert.equal(missing.status, 404);
+  assert.match(await missing.text(), /المنتج غير موجود/);
+  const sitemap = await fetch(`${baseUrl}/sitemap.xml`);
+  const sitemapXml = await sitemap.text();
+  assert.equal(sitemap.status, 200);
+  assert.match(sitemapXml, new RegExp(`/product/${product.slug}`));
+  assert.match(sitemapXml, new RegExp(`http://localhost:5173/product/${product.slug}`));
 });

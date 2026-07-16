@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -24,7 +24,10 @@ export const addressesTable = pgTable("addresses", {
   landmark: text("landmark"),
   isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [
+  index("addresses_customer_default_idx").on(table.customerId, table.isDefault),
+  index("addresses_governorate_idx").on(table.governorateId),
+]);
 
 export const insertCustomerSchema = createInsertSchema(customersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;

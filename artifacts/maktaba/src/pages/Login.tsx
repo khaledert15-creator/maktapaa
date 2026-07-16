@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
   email: z.string().min(1, "البريد الإلكتروني مطلوب").email("بريد إلكتروني غير صحيح"),
-  password: z.string().min(6, "كلمة المرور يجب أن تكون 6 أحرف على الأقل"),
+  password: z.string().min(8, "كلمة المرور يجب أن تكون 8 أحرف على الأقل"),
 });
 
 export default function Login() {

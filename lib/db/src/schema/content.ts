@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -12,6 +12,10 @@ export const siteSettingsTable = pgTable("site_settings", {
 export const bannersTable = pgTable("banners", {
   id: serial("id").primaryKey(),
   imageUrl: text("image_url").notNull(),
+  imageStorageKey: text("image_storage_key"),
+  imageWidth: integer("image_width"),
+  imageHeight: integer("image_height"),
+  imageVariants: jsonb("image_variants").$type<Record<string, { url: string; width: number; height: number; size: number }>>(),
   titleAr: text("title_ar"),
   subtitleAr: text("subtitle_ar"),
   linkUrl: text("link_url"),
