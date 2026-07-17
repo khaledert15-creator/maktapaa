@@ -271,7 +271,7 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">فتح أو إغلاق القائمة الجانبية</span>
     </Button>
   );
 }

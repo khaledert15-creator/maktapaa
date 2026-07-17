@@ -11,8 +11,12 @@ import type { OrderInputPaymentMethod } from './orderInputPaymentMethod';
 export interface OrderInput {
   customerName: string;
   mobile: string;
+  primaryPhoneHasWhatsApp?: boolean;
   /** @nullable */
   altMobile?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   governorateId: number;
   city: string;
   detailedAddress: string;

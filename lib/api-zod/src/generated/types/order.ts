@@ -17,8 +17,15 @@ export interface Order {
   paymentMethod?: string;
   customerName?: string;
   mobile?: string;
+  primaryPhone?: string;
+  primaryPhoneHasWhatsApp?: boolean;
   /** @nullable */
   altMobile?: string | null;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   governorate?: string;
   city?: string;
   detailedAddress?: string;

@@ -44,6 +44,8 @@ function emptySummary(product: typeof productsTable.$inferSelect) {
     customerNoticeTitle: product.customerNoticeTitle,
     customerNoticeMessage: product.customerNoticeMessage,
     customerNoticeButtonText: product.customerNoticeButtonText,
+    customerNoticeIcon: product.customerNoticeIcon,
+    customerNoticeImageUrl: product.customerNoticeImageUrl,
     customerNoticeType: product.customerNoticeType,
     customerNoticeTrigger: product.customerNoticeTrigger,
     customerNoticeStartAt: product.customerNoticeStartAt,

@@ -93,6 +93,8 @@ export * from './orderStatusHistory';
 export * from './orderStatusInput';
 export * from './orderTracking';
 export * from './product';
+export * from './productCustomerNoticeTrigger';
+export * from './productCustomerNoticeType';
 export * from './productListResponse';
 export * from './productSummary';
 export * from './publisher';

@@ -12,7 +12,7 @@ test("password reset token is hashed, expires, is single-use, invalidates sessio
   const suffix = randomUUID();
   const token = `${randomUUID()}${randomUUID()}`;
   const expiredToken = `${randomUUID()}${randomUUID()}`;
-  const [customer] = await db.insert(customersTable).values({ name: "عميل استعادة", email: `reset-${suffix}@example.com`, mobile: `01${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(0, 15) }).returning();
+  const [customer] = await db.insert(customersTable).values({ name: "عميل استعادة", email: `reset-${suffix}@example.com`, primaryPhone: `01${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(0, 15) }).returning();
   try {
     const [row] = await db.insert(passwordResetTokensTable).values({ customerId: customer.id, tokenHash: hashResetToken(token), expiresAt: new Date(Date.now() + 60_000) }).returning();
     await db.insert(passwordResetTokensTable).values({ customerId: customer.id, tokenHash: hashResetToken(expiredToken), expiresAt: new Date(Date.now() - 1_000) });

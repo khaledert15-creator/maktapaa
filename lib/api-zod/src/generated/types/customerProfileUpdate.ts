@@ -10,4 +10,11 @@ export interface CustomerProfileUpdate {
   name?: string;
   email?: string;
   mobile?: string;
+  primaryPhone?: string;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
 }

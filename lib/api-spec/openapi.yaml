@@ -1919,6 +1919,10 @@ components:
         name: { type: string }
         email: { type: ["string", "null"] }
         mobile: { type: string }
+        primaryPhoneHasWhatsApp: { type: boolean, default: true }
+        alternatePhone: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean, default: false }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
         password: { type: string }
 
     AuthResponse:
@@ -1938,12 +1942,17 @@ components:
     # ── Customer ─────────────────────────────────────────────────────────────
     Customer:
       type: object
-      required: [id, name, mobile, createdAt]
+      required: [id, name, mobile, primaryPhone, primaryPhoneHasWhatsApp, alternatePhoneHasWhatsApp, createdAt]
       properties:
         id: { type: integer }
         name: { type: string }
         email: { type: ["string", "null"] }
         mobile: { type: string }
+        primaryPhone: { type: string }
+        primaryPhoneHasWhatsApp: { type: boolean }
+        alternatePhone: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
         isBlocked: { type: boolean }
         createdAt: { type: string }
 
@@ -1953,6 +1962,11 @@ components:
         name: { type: string }
         email: { type: string }
         mobile: { type: string }
+        primaryPhone: { type: string }
+        primaryPhoneHasWhatsApp: { type: boolean }
+        alternatePhone: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
 
     AdminUser:
       type: object
@@ -1975,6 +1989,11 @@ components:
         city: { type: string }
         detailedAddress: { type: string }
         landmark: { type: ["string", "null"] }
+        primaryPhone: { type: ["string", "null"] }
+        primaryPhoneHasWhatsApp: { type: boolean }
+        alternatePhone: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
         isDefault: { type: boolean }
 
     AddressInput:
@@ -1985,6 +2004,11 @@ components:
         city: { type: string }
         detailedAddress: { type: string }
         landmark: { type: string }
+        primaryPhone: { type: string }
+        primaryPhoneHasWhatsApp: { type: boolean }
+        alternatePhone: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
         isDefault: { type: boolean }
 
     # ── Products ─────────────────────────────────────────────────────────────
@@ -2058,6 +2082,17 @@ components:
         reviewCount: { type: integer }
         seoTitle: { type: ["string", "null"] }
         seoDescription: { type: ["string", "null"] }
+        customerNoticeEnabled: { type: boolean }
+        customerNoticeTitle: { type: ["string", "null"] }
+        customerNoticeMessage: { type: ["string", "null"] }
+        customerNoticeButtonText: { type: ["string", "null"] }
+        customerNoticeIcon: { type: ["string", "null"] }
+        customerNoticeImageUrl: { type: ["string", "null"] }
+        customerNoticeType: { type: ["string", "null"], enum: [information, warning, preorder, delayed_delivery, custom, null] }
+        customerNoticeTrigger: { type: ["string", "null"], enum: [product_open, add_to_cart, buy_now, checkout, first_interaction, null] }
+        customerNoticeStartAt: { type: ["string", "null"], format: date-time }
+        customerNoticeEndAt: { type: ["string", "null"], format: date-time }
+        customerNoticeDismissible: { type: boolean }
 
     ProductListResponse:
       type: object
@@ -2339,7 +2374,10 @@ components:
       properties:
         customerName: { type: string }
         mobile: { type: string }
+        primaryPhoneHasWhatsApp: { type: boolean, default: true }
         altMobile: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean, default: false }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
         governorateId: { type: integer }
         city: { type: string }
         detailedAddress: { type: string }
@@ -2385,7 +2423,12 @@ components:
         paymentMethod: { type: string }
         customerName: { type: string }
         mobile: { type: string }
+        primaryPhone: { type: string }
+        primaryPhoneHasWhatsApp: { type: boolean }
         altMobile: { type: ["string", "null"] }
+        alternatePhone: { type: ["string", "null"] }
+        alternatePhoneHasWhatsApp: { type: boolean }
+        preferredWhatsAppPhone: { type: ["string", "null"] }
         governorate: { type: string }
         city: { type: string }
         detailedAddress: { type: string }
@@ -2488,6 +2531,13 @@ components:
         storeName: { type: string }
         storeNameAr: { type: string }
         logoUrl: { type: ["string", "null"] }
+        mainLogoUrl: { type: ["string", "null"] }
+        darkBackgroundLogoUrl: { type: ["string", "null"] }
+        lightBackgroundLogoUrl: { type: ["string", "null"] }
+        mobileLogoUrl: { type: ["string", "null"] }
+        faviconUrl: { type: ["string", "null"] }
+        adminLogoUrl: { type: ["string", "null"] }
+        socialImageUrl: { type: ["string", "null"] }
         whatsappNumber: { type: ["string", "null"] }
         phoneNumber: { type: ["string", "null"] }
         email: { type: ["string", "null"] }

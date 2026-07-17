@@ -3,14 +3,14 @@ import { db, customersTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword } from "../lib/auth";
 import type { IRouter } from "express";
-import { z } from "@workspace/api-zod";
+import { egyptianPhoneSchema, optionalEgyptianPhoneSchema, resolvePreferredWhatsAppPhone, z } from "@workspace/api-zod";
 import { parseBody } from "../lib/validation";
 import { rateLimit } from "../lib/rate-limit";
 import { genericResetResponse, PasswordResetError, requestPasswordReset, resetPassword, validateResetToken } from "../services/password-reset";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
-const customerRegisterSchema = z.object({ name: z.string().trim().min(2).max(200), mobile: z.string().trim().min(8).max(30), email: z.string().email().max(200).nullable().optional(), password: z.string().min(8).max(200) });
+const customerRegisterSchema = z.object({ name: z.string().trim().min(2).max(200), mobile: egyptianPhoneSchema, primaryPhoneHasWhatsApp: z.boolean().default(true), alternatePhone: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().default(false), preferredWhatsAppPhone: optionalEgyptianPhoneSchema, email: z.string().email().max(200).nullable().optional(), password: z.string().min(8).max(200) });
 const loginSchema = z.object({ email: z.string().email().max(200).transform(value => value.toLowerCase()), password: z.string().min(1).max(200) });
 const loginRateLimit = rateLimit({ namespace: "login", windowMs: 15 * 60_000, max: 10 });
 const forgotPasswordRateLimit = rateLimit({ namespace: "forgot-password", windowMs: 60 * 60_000, max: 5 });
@@ -25,16 +25,18 @@ function regenerateSession(req: Parameters<typeof router.post>[1] extends (...ar
 // Customer register
 router.post("/auth/register", async (req, res): Promise<void> => {
   const input = parseBody(customerRegisterSchema, req.body, res); if (!input) return;
-  const { name, mobile, email, password } = input;
+  const { name, mobile, email, password, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp } = input;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone: mobile, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل يجب أن يكون رقمًا صالحًا ومحددًا عليه واتساب" }); return; }
 
-  const existing = await db.select().from(customersTable).where(eq(customersTable.mobile, mobile));
+  const existing = await db.select().from(customersTable).where(eq(customersTable.primaryPhone, mobile));
   if (existing.length > 0) {
     res.status(400).json({ error: "رقم الهاتف مسجل بالفعل" });
     return;
   }
 
   const passwordHash = await hashPassword(password);
-  const [customer] = await db.insert(customersTable).values({ name, mobile, email: email?.toLowerCase() || null, passwordHash }).returning();
+  const [customer] = await db.insert(customersTable).values({ name, primaryPhone: mobile, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone, email: email?.toLowerCase() || null, passwordHash }).returning();
 
   
   const existingCart = req.session.cart;
@@ -43,7 +45,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   req.session.customerId = customer.id;
   req.session.customerName = customer.name;
 
-  res.status(201).json({ customer: { id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt } });
+  res.status(201).json({ customer: { id: customer.id, name: customer.name, email: customer.email, mobile: customer.primaryPhone, primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone, isBlocked: customer.isBlocked, createdAt: customer.createdAt } });
 });
 
 // Customer login
@@ -77,7 +79,7 @@ router.post("/auth/login", loginRateLimit, async (req, res): Promise<void> => {
   req.session.customerId = customer.id;
   req.session.customerName = customer.name;
 
-  res.json({ customer: { id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt } });
+  res.json({ customer: { id: customer.id, name: customer.name, email: customer.email, mobile: customer.primaryPhone, primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone, isBlocked: customer.isBlocked, createdAt: customer.createdAt } });
 });
 
 // Customer logout
@@ -99,7 +101,7 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  res.json({ id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt });
+  res.json({ id: customer.id, name: customer.name, email: customer.email, mobile: customer.primaryPhone, primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone, isBlocked: customer.isBlocked, createdAt: customer.createdAt });
 });
 
 // Admin login

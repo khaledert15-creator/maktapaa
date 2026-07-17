@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, bannersTable, faqsTable, siteSettingsTable, stagesTable, gradesTable, subjectsTable, publishersTable, categoriesTable, productsTable } from "@workspace/db";
+import { db, bannersTable, brandAssetsTable, faqsTable, helpLinksTable, helpSectionsTable, siteSettingsTable, stagesTable, gradesTable, subjectsTable, publishersTable, categoriesTable, productsTable } from "@workspace/db";
 import { and, eq, asc, inArray, sql, isNull, lte, gte, or } from "drizzle-orm";
 import { enrichProductSummaries } from "../services/catalog";
 
@@ -10,15 +10,25 @@ async function getSettings(): Promise<Record<string, string>> {
   return Object.fromEntries(rows.map(r => [r.key, r.value || ""]));
 }
 
-function mapSettings(settings: Record<string, string>) {
+type BrandAsset = typeof brandAssetsTable.$inferSelect;
+
+function mapSettings(settings: Record<string, string>, assets: BrandAsset[] = []) {
   const now = Date.now();
   const startAt = settings.announcementStartAt ? Date.parse(settings.announcementStartAt) : null;
   const endAt = settings.announcementEndAt ? Date.parse(settings.announcementEndAt) : null;
   const announcementInSchedule = (startAt === null || Number.isNaN(startAt) || startAt <= now) && (endAt === null || Number.isNaN(endAt) || endAt >= now);
+  const logos = Object.fromEntries(assets.map(asset => [asset.kind, asset.url]));
   return {
     storeName: settings.storeName || "Maktaba Dot Com",
     storeNameAr: settings.storeNameAr || "مكتبة دوت كوم",
-    logoUrl: settings.logoUrl || null,
+    logoUrl: logos.main || null,
+    mainLogoUrl: logos.main || null,
+    darkBackgroundLogoUrl: logos.dark_background || logos.main || null,
+    lightBackgroundLogoUrl: logos.light_background || logos.main || null,
+    mobileLogoUrl: logos.mobile || logos.main || null,
+    faviconUrl: logos.favicon || null,
+    adminLogoUrl: logos.admin || logos.main || null,
+    socialImageUrl: logos.social || null,
     whatsappNumber: settings.whatsappNumber || null,
     phoneNumber: settings.phoneNumber || null,
     email: settings.email || null,
@@ -48,8 +58,22 @@ const activeBannersWhere = () => {
 
 router.get("/content/settings", async (_req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-store");
-  const settings = await getSettings();
-  res.json(mapSettings(settings));
+  const [settings, assets] = await Promise.all([getSettings(), db.select().from(brandAssetsTable)]);
+  res.json(mapSettings(settings, assets));
+});
+
+router.get("/content/help", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
+  const [section] = await db.select().from(helpSectionsTable).orderBy(asc(helpSectionsTable.id)).limit(1);
+  if (!section || !section.isActive) { res.json({ id: section?.id ?? null, titleAr: section?.titleAr ?? "", isActive: false, items: [] }); return; }
+  const now = new Date();
+  const items = await db.select().from(helpLinksTable).where(and(
+    eq(helpLinksTable.sectionId, section.id),
+    eq(helpLinksTable.isActive, true),
+    or(isNull(helpLinksTable.startAt), lte(helpLinksTable.startAt, now)),
+    or(isNull(helpLinksTable.endAt), gte(helpLinksTable.endAt, now)),
+  )).orderBy(asc(helpLinksTable.sortOrder), asc(helpLinksTable.id));
+  res.json({ id: section.id, titleAr: section.titleAr, isActive: section.isActive, items });
 });
 
 router.get("/content/banners", async (_req, res): Promise<void> => {
@@ -69,7 +93,7 @@ router.get("/content/faqs", async (_req, res): Promise<void> => {
 
 router.get("/content/homepage", async (_req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-store");
-  const [banners, stages, grades, subjects, publishers, categories, productSections, settings] = await Promise.all([
+  const [banners, stages, grades, subjects, publishers, categories, productSections, settings, brandAssets] = await Promise.all([
     db.select().from(bannersTable).where(activeBannersWhere()).orderBy(asc(bannersTable.sortOrder)),
     db.select().from(stagesTable).where(eq(stagesTable.isActive, true)).orderBy(asc(stagesTable.sortOrder)),
     db.select().from(gradesTable).where(eq(gradesTable.isActive, true)).orderBy(asc(gradesTable.sortOrder)),
@@ -87,6 +111,7 @@ router.get("/content/homepage", async (_req, res): Promise<void> => {
       union all (select 'recommended'::text, id from products where status = 'active' and deleted_at is null order by sort_order desc, sales_count desc, updated_at desc limit 8)
     `),
     getSettings(),
+    db.select().from(brandAssetsTable),
   ]);
 
   const sectionIds = productSections.rows.map(row => Number(row.id));
@@ -115,7 +140,7 @@ router.get("/content/homepage", async (_req, res): Promise<void> => {
     bundles: productBundles,
     freeShippingProducts: freeShipping,
     recommendedProducts: recommended,
-    settings: mapSettings(settings),
+    settings: mapSettings(settings, brandAssets),
   });
 });
 

@@ -16,10 +16,17 @@ export const HealthCheckResponse = zod.object({
 })
 
 
+export const registerCustomerBodyPrimaryPhoneHasWhatsAppDefault = true;
+export const registerCustomerBodyAlternatePhoneHasWhatsAppDefault = false;
+
 export const RegisterCustomerBody = zod.object({
   "name": zod.string(),
   "email": zod.string().nullish(),
   "mobile": zod.string(),
+  "primaryPhoneHasWhatsApp": zod.boolean().default(registerCustomerBodyPrimaryPhoneHasWhatsAppDefault),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().default(registerCustomerBodyAlternatePhoneHasWhatsAppDefault),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "password": zod.string()
 })
 
@@ -29,6 +36,11 @@ export const RegisterCustomerResponse = zod.object({
   "name": zod.string(),
   "email": zod.string().nullish(),
   "mobile": zod.string(),
+  "primaryPhone": zod.string(),
+  "primaryPhoneHasWhatsApp": zod.boolean(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isBlocked": zod.boolean().optional(),
   "createdAt": zod.string()
 })
@@ -46,6 +58,11 @@ export const LoginCustomerResponse = zod.object({
   "name": zod.string(),
   "email": zod.string().nullish(),
   "mobile": zod.string(),
+  "primaryPhone": zod.string(),
+  "primaryPhoneHasWhatsApp": zod.boolean(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isBlocked": zod.boolean().optional(),
   "createdAt": zod.string()
 })
@@ -60,6 +77,11 @@ export const GetCurrentCustomerResponse = zod.object({
   "name": zod.string(),
   "email": zod.string().nullish(),
   "mobile": zod.string(),
+  "primaryPhone": zod.string(),
+  "primaryPhoneHasWhatsApp": zod.boolean(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isBlocked": zod.boolean().optional(),
   "createdAt": zod.string()
 })
@@ -264,7 +286,18 @@ export const GetProductResponse = zod.object({
   "avgRating": zod.number().nullish(),
   "reviewCount": zod.number().optional(),
   "seoTitle": zod.string().nullish(),
-  "seoDescription": zod.string().nullish()
+  "seoDescription": zod.string().nullish(),
+  "customerNoticeEnabled": zod.boolean().optional(),
+  "customerNoticeTitle": zod.string().nullish(),
+  "customerNoticeMessage": zod.string().nullish(),
+  "customerNoticeButtonText": zod.string().nullish(),
+  "customerNoticeIcon": zod.string().nullish(),
+  "customerNoticeImageUrl": zod.string().nullish(),
+  "customerNoticeType": zod.union([zod.literal('information'),zod.literal('warning'),zod.literal('preorder'),zod.literal('delayed_delivery'),zod.literal('custom'),zod.literal(null)]).nullish(),
+  "customerNoticeTrigger": zod.union([zod.literal('product_open'),zod.literal('add_to_cart'),zod.literal('buy_now'),zod.literal('checkout'),zod.literal('first_interaction'),zod.literal(null)]).nullish(),
+  "customerNoticeStartAt": zod.coerce.date().nullish(),
+  "customerNoticeEndAt": zod.coerce.date().nullish(),
+  "customerNoticeDismissible": zod.boolean().optional()
 })
 
 
@@ -634,6 +667,8 @@ export const RemoveCouponResponse = zod.object({
 })
 
 
+export const createOrderBodyPrimaryPhoneHasWhatsAppDefault = true;
+export const createOrderBodyAlternatePhoneHasWhatsAppDefault = false;
 export const createOrderBodyCheckoutTokenMin = 12;
 export const createOrderBodyCheckoutTokenMax = 100;
 
@@ -642,7 +677,10 @@ export const createOrderBodyCheckoutTokenMax = 100;
 export const CreateOrderBody = zod.object({
   "customerName": zod.string(),
   "mobile": zod.string(),
+  "primaryPhoneHasWhatsApp": zod.boolean().default(createOrderBodyPrimaryPhoneHasWhatsAppDefault),
   "altMobile": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().default(createOrderBodyAlternatePhoneHasWhatsAppDefault),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "governorateId": zod.number(),
   "city": zod.string(),
   "detailedAddress": zod.string(),
@@ -666,7 +704,12 @@ export const CreateOrderResponse = zod.object({
   "paymentMethod": zod.string().optional(),
   "customerName": zod.string().optional(),
   "mobile": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
   "altMobile": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "governorate": zod.string().optional(),
   "city": zod.string().optional(),
   "detailedAddress": zod.string().optional(),
@@ -738,7 +781,12 @@ export const GetOrderConfirmationResponse = zod.object({
   "paymentMethod": zod.string().optional(),
   "customerName": zod.string().optional(),
   "mobile": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
   "altMobile": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "governorate": zod.string().optional(),
   "city": zod.string().optional(),
   "detailedAddress": zod.string().optional(),
@@ -794,7 +842,12 @@ export const GetMyOrdersResponse = zod.object({
   "paymentMethod": zod.string().optional(),
   "customerName": zod.string().optional(),
   "mobile": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
   "altMobile": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "governorate": zod.string().optional(),
   "city": zod.string().optional(),
   "detailedAddress": zod.string().optional(),
@@ -849,7 +902,12 @@ export const GetMyOrderResponse = zod.object({
   "paymentMethod": zod.string().optional(),
   "customerName": zod.string().optional(),
   "mobile": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
   "altMobile": zod.string().nullish(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "governorate": zod.string().optional(),
   "city": zod.string().optional(),
   "detailedAddress": zod.string().optional(),
@@ -908,7 +966,12 @@ export const RequestOrderCancellationResponse = zod.object({
 export const UpdateCustomerProfileBody = zod.object({
   "name": zod.string().optional(),
   "email": zod.string().optional(),
-  "mobile": zod.string().optional()
+  "mobile": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish()
 })
 
 export const UpdateCustomerProfileResponse = zod.object({
@@ -916,6 +979,11 @@ export const UpdateCustomerProfileResponse = zod.object({
   "name": zod.string(),
   "email": zod.string().nullish(),
   "mobile": zod.string(),
+  "primaryPhone": zod.string(),
+  "primaryPhoneHasWhatsApp": zod.boolean(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isBlocked": zod.boolean().optional(),
   "createdAt": zod.string()
 })
@@ -928,6 +996,11 @@ export const ListCustomerAddressesResponseItem = zod.object({
   "city": zod.string(),
   "detailedAddress": zod.string(),
   "landmark": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isDefault": zod.boolean().optional()
 })
 export const ListCustomerAddressesResponse = zod.array(ListCustomerAddressesResponseItem)
@@ -938,6 +1011,11 @@ export const AddCustomerAddressBody = zod.object({
   "city": zod.string(),
   "detailedAddress": zod.string(),
   "landmark": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isDefault": zod.boolean().optional()
 })
 
@@ -948,6 +1026,11 @@ export const AddCustomerAddressResponse = zod.object({
   "city": zod.string(),
   "detailedAddress": zod.string(),
   "landmark": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isDefault": zod.boolean().optional()
 })
 
@@ -961,6 +1044,11 @@ export const UpdateCustomerAddressBody = zod.object({
   "city": zod.string(),
   "detailedAddress": zod.string(),
   "landmark": zod.string().optional(),
+  "primaryPhone": zod.string().optional(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isDefault": zod.boolean().optional()
 })
 
@@ -971,6 +1059,11 @@ export const UpdateCustomerAddressResponse = zod.object({
   "city": zod.string(),
   "detailedAddress": zod.string(),
   "landmark": zod.string().nullish(),
+  "primaryPhone": zod.string().nullish(),
+  "primaryPhoneHasWhatsApp": zod.boolean().optional(),
+  "alternatePhone": zod.string().nullish(),
+  "alternatePhoneHasWhatsApp": zod.boolean().optional(),
+  "preferredWhatsAppPhone": zod.string().nullish(),
   "isDefault": zod.boolean().optional()
 })
 
@@ -1064,6 +1157,13 @@ export const GetSiteSettingsResponse = zod.object({
   "storeName": zod.string().optional(),
   "storeNameAr": zod.string().optional(),
   "logoUrl": zod.string().nullish(),
+  "mainLogoUrl": zod.string().nullish(),
+  "darkBackgroundLogoUrl": zod.string().nullish(),
+  "lightBackgroundLogoUrl": zod.string().nullish(),
+  "mobileLogoUrl": zod.string().nullish(),
+  "faviconUrl": zod.string().nullish(),
+  "adminLogoUrl": zod.string().nullish(),
+  "socialImageUrl": zod.string().nullish(),
   "whatsappNumber": zod.string().nullish(),
   "phoneNumber": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -1377,6 +1477,13 @@ export const GetHomepageContentResponse = zod.object({
   "storeName": zod.string().optional(),
   "storeNameAr": zod.string().optional(),
   "logoUrl": zod.string().nullish(),
+  "mainLogoUrl": zod.string().nullish(),
+  "darkBackgroundLogoUrl": zod.string().nullish(),
+  "lightBackgroundLogoUrl": zod.string().nullish(),
+  "mobileLogoUrl": zod.string().nullish(),
+  "faviconUrl": zod.string().nullish(),
+  "adminLogoUrl": zod.string().nullish(),
+  "socialImageUrl": zod.string().nullish(),
   "whatsappNumber": zod.string().nullish(),
   "phoneNumber": zod.string().nullish(),
   "email": zod.string().nullish(),
@@ -2538,6 +2645,13 @@ export const AdminUpdateSiteSettingsResponse = zod.object({
   "storeName": zod.string().optional(),
   "storeNameAr": zod.string().optional(),
   "logoUrl": zod.string().nullish(),
+  "mainLogoUrl": zod.string().nullish(),
+  "darkBackgroundLogoUrl": zod.string().nullish(),
+  "lightBackgroundLogoUrl": zod.string().nullish(),
+  "mobileLogoUrl": zod.string().nullish(),
+  "faviconUrl": zod.string().nullish(),
+  "adminLogoUrl": zod.string().nullish(),
+  "socialImageUrl": zod.string().nullish(),
   "whatsappNumber": zod.string().nullish(),
   "phoneNumber": zod.string().nullish(),
   "email": zod.string().nullish(),

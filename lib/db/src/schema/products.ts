@@ -64,6 +64,8 @@ export const productsTable = pgTable("products", {
   customerNoticeTitle: text("customer_notice_title"),
   customerNoticeMessage: text("customer_notice_message"),
   customerNoticeButtonText: text("customer_notice_button_text"),
+  customerNoticeIcon: text("customer_notice_icon"),
+  customerNoticeImageUrl: text("customer_notice_image_url"),
   customerNoticeType: customerNoticeTypeEnum("customer_notice_type"),
   customerNoticeTrigger: customerNoticeTriggerEnum("customer_notice_trigger"),
   customerNoticeStartAt: timestamp("customer_notice_start_at", { withTimezone: true }),

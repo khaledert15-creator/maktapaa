@@ -15,11 +15,18 @@ export type StoredImage = {
   height: number;
   variants: { thumbnail: ImageVariant; medium: ImageVariant; large: ImageVariant };
 };
+export type StoredBrandAsset = Omit<StoredImage, "mimeType" | "variants"> & {
+  mimeType: "image/webp" | "image/svg+xml";
+  variants: StoredImage["variants"] | null;
+};
+type ImagePrefix = "products" | "banners" | "branding";
 
 export interface ImageStorage {
-  saveImage(buffer: Buffer, prefix?: "products" | "banners"): Promise<StoredImage>;
+  saveImage(buffer: Buffer, prefix?: ImagePrefix): Promise<StoredImage>;
+  saveBrandAsset(buffer: Buffer, mimeType: string): Promise<StoredBrandAsset>;
   deleteImage(storageKey: string): Promise<void>;
-  replaceImage(storageKey: string, buffer: Buffer, prefix?: "products" | "banners"): Promise<StoredImage>;
+  replaceImage(storageKey: string, buffer: Buffer, prefix?: ImagePrefix): Promise<StoredImage>;
+  replaceBrandAsset(storageKey: string, buffer: Buffer, mimeType: string): Promise<StoredBrandAsset>;
 }
 
 type GeneratedVariant = Omit<ImageVariant, "url"> & { buffer: Buffer; suffix: "thumbnail" | "medium" | "large" };
@@ -60,10 +67,23 @@ function storedImage(storageKey: string, variants: GeneratedVariant[], publicUrl
   };
 }
 
+async function svgMetadata(buffer: Buffer) {
+  const source = buffer.toString("utf8");
+  const withoutStandardNamespaces = source
+    .replace(/\s+xmlns\s*=\s*["']http:\/\/www\.w3\.org\/2000\/svg["']/gi, "")
+    .replace(/\s+xmlns:xlink\s*=\s*["']http:\/\/www\.w3\.org\/1999\/xlink["']/gi, "");
+  if (!/^\s*(?:<\?xml[^>]*>\s*)?<svg\b/i.test(source) || /<(?:script|foreignObject)\b|\bon\w+\s*=|javascript:|https?:\/\//i.test(withoutStandardNamespaces)) {
+    throw new Error("The uploaded SVG contains unsafe or external content");
+  }
+  const metadata = await sharp(buffer, { failOn: "error", limitInputPixels: 40_000_000 }).metadata();
+  if (!metadata.width || !metadata.height) throw new Error("The uploaded SVG must define valid dimensions");
+  return { width: metadata.width, height: metadata.height };
+}
+
 export class LocalImageStorage implements ImageStorage {
   constructor(private readonly root = config.STORAGE_LOCAL_DIR ? path.resolve(config.STORAGE_LOCAL_DIR) : path.resolve(process.cwd(), "uploads")) {}
 
-  async saveImage(buffer: Buffer, prefix: "products" | "banners" = "products"): Promise<StoredImage> {
+  async saveImage(buffer: Buffer, prefix: ImagePrefix = "products"): Promise<StoredImage> {
     const storageKey = `${prefix}/${crypto.randomUUID()}`;
     const variants = await generateVariants(buffer);
     try {
@@ -79,6 +99,16 @@ export class LocalImageStorage implements ImageStorage {
     return storedImage(storageKey, variants, key => `/uploads/${key}`);
   }
 
+  async saveBrandAsset(buffer: Buffer, mimeType: string): Promise<StoredBrandAsset> {
+    if (mimeType !== "image/svg+xml") return this.saveImage(buffer, "branding");
+    const { width, height } = await svgMetadata(buffer);
+    const storageKey = `branding/${crypto.randomUUID()}.svg`;
+    const target = path.resolve(this.root, storageKey);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, buffer, { flag: "wx" });
+    return { url: `/uploads/${storageKey}`, storageKey, size: buffer.length, mimeType: "image/svg+xml", width, height, variants: null };
+  }
+
   async deleteImage(storageKey: string): Promise<void> {
     const targets = keysFor(storageKey).map(key => path.resolve(this.root, key));
     for (const target of targets) {
@@ -87,12 +117,18 @@ export class LocalImageStorage implements ImageStorage {
     }
   }
 
-  async replaceImage(storageKey: string, buffer: Buffer, prefix: "products" | "banners" = "products"): Promise<StoredImage> {
+  async replaceImage(storageKey: string, buffer: Buffer, prefix: ImagePrefix = "products"): Promise<StoredImage> {
     const replacement = await this.saveImage(buffer, prefix);
     await this.deleteImage(storageKey).catch(async error => {
       await this.deleteImage(replacement.storageKey);
       throw error;
     });
+    return replacement;
+  }
+
+  async replaceBrandAsset(storageKey: string, buffer: Buffer, mimeType: string): Promise<StoredBrandAsset> {
+    const replacement = await this.saveBrandAsset(buffer, mimeType);
+    await this.deleteImage(storageKey).catch(async error => { await this.deleteImage(replacement.storageKey); throw error; });
     return replacement;
   }
 
@@ -117,7 +153,7 @@ export class S3ImageStorage implements ImageStorage {
     });
   }
 
-  async saveImage(buffer: Buffer, prefix: "products" | "banners" = "products"): Promise<StoredImage> {
+  async saveImage(buffer: Buffer, prefix: ImagePrefix = "products"): Promise<StoredImage> {
     const storageKey = `${prefix}/${crypto.randomUUID()}`;
     const variants = await generateVariants(buffer);
     try {
@@ -136,12 +172,20 @@ export class S3ImageStorage implements ImageStorage {
     return storedImage(storageKey, variants, key => `${this.publicBaseUrl}/${key}`);
   }
 
+  async saveBrandAsset(buffer: Buffer, mimeType: string): Promise<StoredBrandAsset> {
+    if (mimeType !== "image/svg+xml") return this.saveImage(buffer, "branding");
+    const { width, height } = await svgMetadata(buffer);
+    const storageKey = `branding/${crypto.randomUUID()}.svg`;
+    await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: storageKey, Body: buffer, ContentType: "image/svg+xml", CacheControl: "public, max-age=31536000, immutable", Metadata: { width: String(width), height: String(height) } }));
+    return { url: `${this.publicBaseUrl}/${storageKey}`, storageKey, size: buffer.length, mimeType: "image/svg+xml", width, height, variants: null };
+  }
+
   async deleteImage(storageKey: string): Promise<void> {
     const objects = keysFor(storageKey).map(Key => ({ Key }));
     await this.client.send(new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: objects, Quiet: true } }));
   }
 
-  async replaceImage(storageKey: string, buffer: Buffer, prefix: "products" | "banners" = "products"): Promise<StoredImage> {
+  async replaceImage(storageKey: string, buffer: Buffer, prefix: ImagePrefix = "products"): Promise<StoredImage> {
     const replacement = await this.saveImage(buffer, prefix);
     try {
       await this.deleteImage(storageKey);
@@ -151,24 +195,44 @@ export class S3ImageStorage implements ImageStorage {
       throw error;
     }
   }
+
+  async replaceBrandAsset(storageKey: string, buffer: Buffer, mimeType: string): Promise<StoredBrandAsset> {
+    const replacement = await this.saveBrandAsset(buffer, mimeType);
+    try { await this.deleteImage(storageKey); return replacement; }
+    catch (error) { await this.deleteImage(replacement.storageKey); throw error; }
+  }
 }
 
 export class MemoryImageStorage implements ImageStorage {
   readonly objects = new Map<string, Buffer>();
 
-  async saveImage(buffer: Buffer, prefix: "products" | "banners" = "products"): Promise<StoredImage> {
+  async saveImage(buffer: Buffer, prefix: ImagePrefix = "products"): Promise<StoredImage> {
     const storageKey = `${prefix}/${crypto.randomUUID()}`;
     const variants = await generateVariants(buffer);
     for (const variant of variants) this.objects.set(`${storageKey}/${variant.suffix}.webp`, variant.buffer);
     return storedImage(storageKey, variants, key => `https://storage.test/${key}`);
   }
 
+  async saveBrandAsset(buffer: Buffer, mimeType: string): Promise<StoredBrandAsset> {
+    if (mimeType !== "image/svg+xml") return this.saveImage(buffer, "branding");
+    const { width, height } = await svgMetadata(buffer);
+    const storageKey = `branding/${crypto.randomUUID()}.svg`;
+    this.objects.set(storageKey, buffer);
+    return { url: `https://storage.test/${storageKey}`, storageKey, size: buffer.length, mimeType: "image/svg+xml", width, height, variants: null };
+  }
+
   async deleteImage(storageKey: string): Promise<void> {
     for (const key of keysFor(storageKey)) this.objects.delete(key);
   }
 
-  async replaceImage(storageKey: string, buffer: Buffer, prefix: "products" | "banners" = "products"): Promise<StoredImage> {
+  async replaceImage(storageKey: string, buffer: Buffer, prefix: ImagePrefix = "products"): Promise<StoredImage> {
     const replacement = await this.saveImage(buffer, prefix);
+    await this.deleteImage(storageKey);
+    return replacement;
+  }
+
+  async replaceBrandAsset(storageKey: string, buffer: Buffer, mimeType: string): Promise<StoredBrandAsset> {
+    const replacement = await this.saveBrandAsset(buffer, mimeType);
     await this.deleteImage(storageKey);
     return replacement;
   }

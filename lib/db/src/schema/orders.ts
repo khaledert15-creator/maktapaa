@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, pgEnum, jsonb, uniqueIndex, index, boolean, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -39,7 +39,10 @@ export const ordersTable = pgTable("orders", {
   customerId: integer("customer_id").references(() => customersTable.id, { onDelete: "set null" }),
   customerName: text("customer_name").notNull(),
   mobile: text("mobile").notNull(),
+  primaryPhoneHasWhatsApp: boolean("primary_phone_has_whatsapp").notNull().default(true),
   altMobile: text("alt_mobile"),
+  alternatePhoneHasWhatsApp: boolean("alternate_phone_has_whatsapp").notNull().default(false),
+  preferredWhatsAppPhone: text("preferred_whatsapp_phone"),
 
   governorateId: integer("governorate_id").references(() => governoratesTable.id, { onDelete: "set null" }),
   governorateName: text("governorate_name").notNull(),
@@ -80,6 +83,7 @@ export const ordersTable = pgTable("orders", {
   index("orders_mobile_created_idx").on(table.mobile, table.createdAt),
   index("orders_governorate_created_idx").on(table.governorateId, table.createdAt),
   index("orders_created_idx").on(table.createdAt),
+  check("orders_preferred_whatsapp_valid", sql`${table.preferredWhatsAppPhone} IS NULL OR (${table.primaryPhoneHasWhatsApp} AND ${table.preferredWhatsAppPhone} = ${table.mobile}) OR (${table.alternatePhoneHasWhatsApp} AND ${table.altMobile} IS NOT NULL AND ${table.preferredWhatsAppPhone} = ${table.altMobile})`),
 ]);
 
 export const orderItemsTable = pgTable("order_items", {

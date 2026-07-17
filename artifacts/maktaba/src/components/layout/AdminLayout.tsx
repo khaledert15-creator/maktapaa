@@ -16,12 +16,15 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { getGetSiteSettingsQueryKey, useGetSiteSettings } from "@workspace/api-client-react";
 
 export function AdminLayout({ children, requiredPermission }: { children: ReactNode; requiredPermission?: string }) {
   const [location, setLocation] = useLocation();
   const { admin, isAdminAuthLoaded, logoutAdmin } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { data: settings } = useGetSiteSettings({ query: { queryKey: getGetSiteSettingsQueryKey(), staleTime: 60_000 } });
+  const adminLogo = settings?.adminLogoUrl || settings?.mainLogoUrl || settings?.logoUrl;
 
   useEffect(() => {
     if (isAdminAuthLoaded && !admin) setLocation('/admin/login');
@@ -31,7 +34,7 @@ export function AdminLayout({ children, requiredPermission }: { children: ReactN
     return <div className="min-h-screen grid place-items-center" dir="rtl">جاري التحقق من صلاحية الدخول...</div>;
   }
 
-  const can = (permission: string) => admin.role === "owner" || admin.role === "administrator" || admin.permissions?.includes(permission);
+  const can = (permission: string) => admin.role === "owner" || admin.role === "administrator" || admin.permissions?.includes(permission) || (permission === "content.view" && (admin.permissions?.includes("content.manage") || admin.permissions?.includes("branding.manage")));
   const navigation = [
     { name: "لوحة التحكم", href: "/admin", icon: LayoutDashboard, permission: "dashboard.view" },
     { name: "المنتجات", href: "/admin/products", icon: Package, permission: "products.view" },
@@ -41,7 +44,7 @@ export function AdminLayout({ children, requiredPermission }: { children: ReactN
     { name: "الكوبونات", href: "/admin/coupons", icon: Tags, permission: "coupons.view" },
     { name: "الشحن والمحافظات", href: "/admin/shipping", icon: Truck, permission: "shipping.view" },
     { name: "التصنيفات", href: "/admin/classifications", icon: Tags, permission: "classifications.view" },
-    { name: "إدارة المحتوى", href: "/admin/content", icon: FileText, permission: "content.manage" },
+    { name: "إدارة المحتوى", href: "/admin/content", icon: FileText, permission: "content.view" },
     { name: "التقارير", href: "/admin/reports", icon: FileText, permission: "reports.view" },
     { name: "الموظفين", href: "/admin/employees", icon: Users, permission: "employees.manage" },
   ].filter(item => can(item.permission));
@@ -66,10 +69,10 @@ export function AdminLayout({ children, requiredPermission }: { children: ReactN
       >
         <div className="h-full flex flex-col">
           <div className="h-16 flex items-center justify-between px-6 border-b border-sidebar-border">
-            <Link href={homeHref} className="text-xl font-bold text-sidebar-foreground overflow-hidden whitespace-nowrap">
-              {isCollapsed ? 'م' : 'مكتبة دوت كوم | الإدارة'}
+            <Link href={homeHref} className="flex min-w-0 items-center text-xl font-bold text-sidebar-foreground overflow-hidden whitespace-nowrap" aria-label="الصفحة الرئيسية للوحة الإدارة">
+              {adminLogo ? <img src={adminLogo} alt={settings?.storeNameAr || "مكتبة دوت كوم"} className={`${isCollapsed ? "h-9 w-9" : "h-10 max-w-44"} object-contain object-right`} /> : isCollapsed ? 'م' : `${settings?.storeNameAr || 'مكتبة دوت كوم'} | الإدارة`}
             </Link>
-            <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsSidebarOpen(false)} aria-label="إغلاق القائمة" title="إغلاق القائمة">
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -120,10 +123,10 @@ export function AdminLayout({ children, requiredPermission }: { children: ReactN
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-background border-b flex items-center px-4 lg:px-8 shrink-0">
-          <Button variant="ghost" size="icon" className="lg:hidden ml-4" onClick={() => setIsSidebarOpen(true)}>
+          <Button variant="ghost" size="icon" className="lg:hidden ml-4" onClick={() => setIsSidebarOpen(true)} aria-label="فتح القائمة" title="فتح القائمة">
             <Menu className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="hidden lg:inline-flex" onClick={() => setIsCollapsed(value => !value)} aria-label={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'}>
+          <Button variant="ghost" size="icon" className="hidden lg:inline-flex" onClick={() => setIsCollapsed(value => !value)} aria-label={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'} title={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'}>
             {isCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />}
           </Button>
           <div className="flex-1" />

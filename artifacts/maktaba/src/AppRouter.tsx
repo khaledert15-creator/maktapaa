@@ -97,7 +97,7 @@ export function AppRouter() {
       <Route path="/admin/coupons">{() => <AdminLayout requiredPermission="coupons.view"><AdminCoupons /></AdminLayout>}</Route>
       <Route path="/admin/shipping">{() => <AdminLayout requiredPermission="shipping.view"><AdminShipping /></AdminLayout>}</Route>
       <Route path="/admin/classifications">{() => <AdminLayout requiredPermission="classifications.view"><AdminClassifications /></AdminLayout>}</Route>
-      <Route path="/admin/content">{() => <AdminLayout requiredPermission="content.manage"><AdminContent /></AdminLayout>}</Route>
+      <Route path="/admin/content">{() => <AdminLayout requiredPermission="content.view"><AdminContent /></AdminLayout>}</Route>
       <Route path="/admin/reports">{() => <AdminLayout requiredPermission="reports.view"><AdminReports /></AdminLayout>}</Route>
       <Route path="/admin/employees">{() => <AdminLayout requiredPermission="employees.manage"><AdminEmployees /></AdminLayout>}</Route>
       <Route path="/admin/:rest*">

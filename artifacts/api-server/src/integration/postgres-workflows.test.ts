@@ -158,9 +158,9 @@ test("public storefront records, primary images, favorites, addresses and checko
     assert.equal(savedAddress.governorateName, governorate.nameAr, "saved address snapshots governorate name");
 
     const checkoutToken = `checkout-${suffix}`;
-    const [savedOrder] = await db.insert(ordersTable).values({ checkoutToken, orderNumber: `MK-IDEM-${suffix}`, customerId: customer.id, customerName: customer.name, mobile: customer.mobile, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان اختبار", subtotal: "125", shippingCost: "0", total: "125" }).returning();
+    const [savedOrder] = await db.insert(ordersTable).values({ checkoutToken, orderNumber: `MK-IDEM-${suffix}`, customerId: customer.id, customerName: customer.name, mobile: customer.primaryPhone, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان اختبار", subtotal: "125", shippingCost: "0", total: "125" }).returning();
     orderId = savedOrder.id;
-    await assert.rejects(() => db.insert(ordersTable).values({ checkoutToken, orderNumber: `MK-IDEM-DUP-${suffix}`, customerName: customer.name, mobile: customer.mobile, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان اختبار", subtotal: "125", shippingCost: "0", total: "125" }), "checkout token prevents duplicate orders at database level");
+    await assert.rejects(() => db.insert(ordersTable).values({ checkoutToken, orderNumber: `MK-IDEM-DUP-${suffix}`, customerName: customer.name, mobile: customer.primaryPhone, governorateId: governorate.id, governorateName: governorate.nameAr, city: "مدينة اختبار", detailedAddress: "عنوان اختبار", subtotal: "125", shippingCost: "0", total: "125" }), "checkout token prevents duplicate orders at database level");
   } finally {
     if (orderId) await db.delete(ordersTable).where(eq(ordersTable.id, orderId));
     if (addressId) await db.delete(addressesTable).where(eq(addressesTable.id, addressId));

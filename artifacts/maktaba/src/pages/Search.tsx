@@ -66,6 +66,7 @@ export default function Search() {
           <div className="relative">
             <Input 
               autoFocus
+              aria-label="البحث عن كتاب أو ناشر أو مؤلف"
               placeholder="ابحث عن كتاب، دار نشر، أو مؤلف..." 
               className="h-14 pl-12 pr-4 text-lg rounded-2xl shadow-sm border-primary/20 focus-visible:ring-primary/20"
               value={query}
@@ -77,6 +78,8 @@ export default function Search() {
               type="submit" 
               size="icon" 
               variant="ghost" 
+              aria-label="بحث"
+              title="بحث"
               className="absolute left-2 top-2 h-10 w-10 text-primary hover:bg-primary/10"
             >
               <SearchIcon className="h-5 w-5" />

@@ -19,6 +19,12 @@ export interface CustomerRegisterInput {
   /** @nullable */
   email?: string | null;
   mobile: string;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   password: string;
 }
 
@@ -28,6 +34,13 @@ export interface Customer {
   /** @nullable */
   email?: string | null;
   mobile: string;
+  primaryPhone: string;
+  primaryPhoneHasWhatsApp: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isBlocked?: boolean;
   createdAt: string;
 }
@@ -52,6 +65,13 @@ export interface CustomerProfileUpdate {
   name?: string;
   email?: string;
   mobile?: string;
+  primaryPhone?: string;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
 }
 
 export interface Address {
@@ -62,6 +82,14 @@ export interface Address {
   detailedAddress: string;
   /** @nullable */
   landmark?: string | null;
+  /** @nullable */
+  primaryPhone?: string | null;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isDefault?: boolean;
 }
 
@@ -70,6 +98,13 @@ export interface AddressInput {
   city: string;
   detailedAddress: string;
   landmark?: string;
+  primaryPhone?: string;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isDefault?: boolean;
 }
 
@@ -113,6 +148,34 @@ export interface ProductSummary {
   /** @nullable */
   author?: string | null;
 }
+
+/**
+ * @nullable
+ */
+export type ProductCustomerNoticeType = typeof ProductCustomerNoticeType[keyof typeof ProductCustomerNoticeType] | null;
+
+
+export const ProductCustomerNoticeType = {
+  information: 'information',
+  warning: 'warning',
+  preorder: 'preorder',
+  delayed_delivery: 'delayed_delivery',
+  custom: 'custom',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ProductCustomerNoticeTrigger = typeof ProductCustomerNoticeTrigger[keyof typeof ProductCustomerNoticeTrigger] | null;
+
+
+export const ProductCustomerNoticeTrigger = {
+  product_open: 'product_open',
+  add_to_cart: 'add_to_cart',
+  buy_now: 'buy_now',
+  checkout: 'checkout',
+  first_interaction: 'first_interaction',
+} as const;
 
 export interface Product {
   id: number;
@@ -172,6 +235,26 @@ export interface Product {
   seoTitle?: string | null;
   /** @nullable */
   seoDescription?: string | null;
+  customerNoticeEnabled?: boolean;
+  /** @nullable */
+  customerNoticeTitle?: string | null;
+  /** @nullable */
+  customerNoticeMessage?: string | null;
+  /** @nullable */
+  customerNoticeButtonText?: string | null;
+  /** @nullable */
+  customerNoticeIcon?: string | null;
+  /** @nullable */
+  customerNoticeImageUrl?: string | null;
+  /** @nullable */
+  customerNoticeType?: ProductCustomerNoticeType;
+  /** @nullable */
+  customerNoticeTrigger?: ProductCustomerNoticeTrigger;
+  /** @nullable */
+  customerNoticeStartAt?: string | null;
+  /** @nullable */
+  customerNoticeEndAt?: string | null;
+  customerNoticeDismissible?: boolean;
 }
 
 export interface ProductListResponse {
@@ -425,8 +508,12 @@ export const OrderInputPaymentMethod = {
 export interface OrderInput {
   customerName: string;
   mobile: string;
+  primaryPhoneHasWhatsApp?: boolean;
   /** @nullable */
   altMobile?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   governorateId: number;
   city: string;
   detailedAddress: string;
@@ -478,8 +565,15 @@ export interface Order {
   paymentMethod?: string;
   customerName?: string;
   mobile?: string;
+  primaryPhone?: string;
+  primaryPhoneHasWhatsApp?: boolean;
   /** @nullable */
   altMobile?: string | null;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   governorate?: string;
   city?: string;
   detailedAddress?: string;
@@ -567,6 +661,20 @@ export interface SiteSettings {
   storeNameAr?: string;
   /** @nullable */
   logoUrl?: string | null;
+  /** @nullable */
+  mainLogoUrl?: string | null;
+  /** @nullable */
+  darkBackgroundLogoUrl?: string | null;
+  /** @nullable */
+  lightBackgroundLogoUrl?: string | null;
+  /** @nullable */
+  mobileLogoUrl?: string | null;
+  /** @nullable */
+  faviconUrl?: string | null;
+  /** @nullable */
+  adminLogoUrl?: string | null;
+  /** @nullable */
+  socialImageUrl?: string | null;
   /** @nullable */
   whatsappNumber?: string | null;
   /** @nullable */

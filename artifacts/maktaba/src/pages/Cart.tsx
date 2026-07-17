@@ -149,11 +149,11 @@ export default function Cart() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center border rounded-md h-9 w-24 mx-auto">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleUpdateQuantity(item.productId, item.quantity - 1)}>
+                          <Button variant="ghost" size="icon" aria-label={`تقليل كمية ${item.nameAr}`} title="تقليل الكمية" className="h-8 w-8" onClick={() => handleUpdateQuantity(item.productId, item.quantity - 1)}>
                             <Minus className="h-3 w-3" />
                           </Button>
                           <span className="flex-1 text-center text-sm font-semibold">{item.quantity}</span>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleUpdateQuantity(item.productId, item.quantity + 1)}>
+                          <Button variant="ghost" size="icon" aria-label={`زيادة كمية ${item.nameAr}`} title="زيادة الكمية" className="h-8 w-8" onClick={() => handleUpdateQuantity(item.productId, item.quantity + 1)}>
                             <Plus className="h-3 w-3" />
                           </Button>
                         </div>
@@ -162,7 +162,7 @@ export default function Cart() {
                         {item.subtotal} ج.م
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => removeItemMutation.mutate({ productId: item.productId })}>
+                        <Button variant="ghost" size="icon" aria-label={`حذف ${item.nameAr} من السلة`} title="حذف من السلة" className="text-muted-foreground hover:text-destructive" onClick={() => removeItemMutation.mutate({ productId: item.productId })}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -196,15 +196,15 @@ export default function Cart() {
                     
                     <div className="mt-auto flex items-center justify-between">
                       <div className="flex items-center border rounded-md h-8 w-24">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.productId, item.quantity - 1)}>
+                        <Button variant="ghost" size="icon" aria-label={`تقليل كمية ${item.nameAr}`} title="تقليل الكمية" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.productId, item.quantity - 1)}>
                           <Minus className="h-3 w-3" />
                         </Button>
                         <span className="flex-1 text-center text-sm font-semibold">{item.quantity}</span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.productId, item.quantity + 1)}>
+                        <Button variant="ghost" size="icon" aria-label={`زيادة كمية ${item.nameAr}`} title="زيادة الكمية" className="h-7 w-7" onClick={() => handleUpdateQuantity(item.productId, item.quantity + 1)}>
                           <Plus className="h-3 w-3" />
                         </Button>
                       </div>
-                      <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive h-8 w-8" onClick={() => removeItemMutation.mutate({ productId: item.productId })}>
+                      <Button variant="ghost" size="icon" aria-label={`حذف ${item.nameAr} من السلة`} title="حذف من السلة" className="text-muted-foreground hover:text-destructive h-8 w-8" onClick={() => removeItemMutation.mutate({ productId: item.productId })}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -246,7 +246,7 @@ export default function Cart() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold">-{cart.couponDiscount} ج.م</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeCouponMutation.mutate()}>
+                    <Button variant="ghost" size="icon" aria-label="إزالة كود الخصم" title="إزالة كود الخصم" className="h-6 w-6 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => removeCouponMutation.mutate()}>
                       <X className="h-3 w-3" />
                     </Button>
                   </div>

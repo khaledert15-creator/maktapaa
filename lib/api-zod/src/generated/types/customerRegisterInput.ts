@@ -11,5 +11,11 @@ export interface CustomerRegisterInput {
   /** @nullable */
   email?: string | null;
   mobile: string;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   password: string;
 }

@@ -61,6 +61,8 @@ async function buildCartResponse(cart: CartSession) {
       customerNoticeTitle: p.customerNoticeTitle,
       customerNoticeMessage: p.customerNoticeMessage,
       customerNoticeButtonText: p.customerNoticeButtonText,
+      customerNoticeIcon: p.customerNoticeIcon,
+      customerNoticeImageUrl: p.customerNoticeImageUrl,
       customerNoticeType: p.customerNoticeType,
       customerNoticeTrigger: p.customerNoticeTrigger,
       customerNoticeStartAt: p.customerNoticeStartAt,

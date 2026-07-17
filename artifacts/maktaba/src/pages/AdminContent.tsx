@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { HeroBanner, type HeroSlide } from "@/components/storefront/HeroBanner";
+import { AdminHelpContent } from "@/components/admin/AdminHelpContent";
+import { AdminBranding } from "@/components/admin/AdminBranding";
 
 type Announcement = { text: string; isActive: boolean; link: string | null; startAt: string | null; endAt: string | null };
 type Setting = { id: number; key: string; value?: string | null };
@@ -223,7 +225,7 @@ export default function AdminContent() {
       </div>
 
       <Tabs defaultValue="homepage" dir="rtl">
-        <TabsList className="grid w-full max-w-lg grid-cols-2"><TabsTrigger value="homepage">الصفحة الرئيسية</TabsTrigger><TabsTrigger value="general">الإعدادات العامة</TabsTrigger></TabsList>
+        <TabsList className="grid h-auto w-full max-w-3xl grid-cols-2 sm:grid-cols-4"><TabsTrigger value="homepage">الصفحة الرئيسية</TabsTrigger><TabsTrigger value="help">المساعدة</TabsTrigger><TabsTrigger value="branding">الشعارات</TabsTrigger><TabsTrigger value="general">الإعدادات العامة</TabsTrigger></TabsList>
         <TabsContent value="homepage" className="mt-6 space-y-6">
           <Card>
             <CardHeader><div className="flex items-start justify-between gap-4"><div><CardTitle className="flex items-center gap-2"><Megaphone className="h-5 w-5 text-sky-600" /> شريط الإعلان</CardTitle><CardDescription className="mt-2">النص أعلى الموقع، مع رابط اختياري وجدولة زمنية مستقلة.</CardDescription></div><Badge variant={isCurrentlyVisible(announcement.isActive, announcement.startAt ? toIso(announcement.startAt) : null, announcement.endAt ? toIso(announcement.endAt) : null) ? "default" : "secondary"}>{isCurrentlyVisible(announcement.isActive, announcement.startAt ? toIso(announcement.startAt) : null, announcement.endAt ? toIso(announcement.endAt) : null) ? "ظاهر الآن" : "غير ظاهر"}</Badge></div></CardHeader>
@@ -239,6 +241,8 @@ export default function AdminContent() {
           <div className="flex items-center justify-between gap-4"><div><h2 className="text-2xl font-black">شرائح البانر الرئيسي</h2><p className="mt-1 text-sm text-muted-foreground">يدعم عدة شرائح مرتبة مع حالة وجدول نشر مستقل لكل شريحة.</p></div><Button onClick={openNewBanner}><Plus className="ml-2 h-4 w-4" /> شريحة جديدة</Button></div>
           {!banners.length ? <Card><CardContent className="py-20 text-center"><ImagePlus className="mx-auto mb-4 h-12 w-12 text-muted-foreground/40" /><p className="font-bold">لا توجد شرائح بانر</p><p className="mt-1 text-sm text-muted-foreground">أضف أول شريحة ثم عاينها قبل تفعيلها.</p></CardContent></Card> : <div className="grid gap-5 xl:grid-cols-2">{banners.map(banner => <BannerCard key={banner.id} banner={banner} onEdit={() => openBanner(banner)} onPreview={() => setPreviewSlide(banner)} onToggle={() => void toggleBanner(banner)} onDelete={() => setDeletingId(banner.id)} />)}</div>}
         </TabsContent>
+        <TabsContent value="help" className="mt-6"><AdminHelpContent onSaved={refreshPublicContent} /></TabsContent>
+        <TabsContent value="branding" className="mt-6"><AdminBranding onSaved={refreshPublicContent} /></TabsContent>
         <TabsContent value="general" className="mt-6"><GeneralSettings settings={settings} onSettingsChange={setSettings} onSaved={refreshPublicContent} /></TabsContent>
       </Tabs>
 
@@ -287,7 +291,7 @@ function GeneralSettings({ settings, onSettingsChange, onSaved }: { settings: Se
   const { toast } = useToast();
   const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(settings.map(row => [row.key, row.value || ""])));
   const [savingKey, setSavingKey] = useState<string | null>(null);
-  const rows = settings.filter(row => !managedAnnouncementKeys.has(row.key));
+  const rows = settings.filter(row => !managedAnnouncementKeys.has(row.key) && row.key !== "logoUrl");
   const save = async (key: string) => { setSavingKey(key); try { const saved = await api<Setting>(`/api/admin/content/settings/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ value: drafts[key] || "" }) }); onSettingsChange(settings.map(row => row.key === key ? saved : row)); await onSaved(); toast({ title: "تم حفظ الإعداد" }); } catch (reason) { toast({ title: "تعذر الحفظ", description: reason instanceof Error ? reason.message : String(reason), variant: "destructive" }); } finally { setSavingKey(null); } };
   return <div className="grid gap-4 md:grid-cols-2">{rows.map(row => <Card key={row.key}><CardHeader><CardTitle className="text-base">{settingLabels[row.key] || row.key}</CardTitle><CardDescription dir="ltr" className="text-right">{row.key}</CardDescription></CardHeader><CardContent className="space-y-3"><Textarea value={drafts[row.key] || ""} onChange={event => setDrafts(value => ({ ...value, [row.key]: event.target.value }))} /><Button size="sm" disabled={savingKey === row.key} onClick={() => void save(row.key)}>{savingKey === row.key ? "جاري الحفظ..." : "حفظ"}</Button></CardContent></Card>)}</div>;
 }

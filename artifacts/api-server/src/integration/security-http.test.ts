@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import app from "../app";
 import {
   auditLogsTable, cancellationRequestsTable, couponUsageTable, couponsTable, db,
   governoratesTable, orderItemsTable, ordersTable, pool, productsTable, reviewsTable,
   stockMovementsTable, usersTable, customersTable,
   stagesTable, bannersTable, siteSettingsTable,
+  brandAssetsTable, helpLinksTable, helpSectionsTable,
 } from "@workspace/db";
 import { CouponValidationError, validateCoupon } from "../services/coupons";
 import { OrderStateError, transitionOrderStatus } from "../services/order-state";
@@ -77,10 +78,12 @@ test("warehouse employee is denied employees, permissions, coupons, content, rep
     request("/api/admin/content/announcement", cookie),
     request("/api/admin/content/announcement", cookie, { method: "PUT", body: JSON.stringify({ text: "محظور", isActive: true }) }),
     request("/api/admin/content/banners", cookie),
+    request("/api/admin/content/help", cookie),
+    request("/api/admin/content/branding", cookie),
     request("/api/admin/reports/inventory", cookie),
     request("/api/admin/audit-logs", cookie),
   ]);
-  assert.deepEqual(protectedRequests.map(response => response.status), Array(11).fill(403));
+  assert.deepEqual(protectedRequests.map(response => response.status), Array(13).fill(403));
 
   const suffix = randomUUID();
   const [product] = await db.insert(productsTable).values({ nameAr: `مخزون أمني ${suffix}`, slug: `security-stock-${suffix}`, price: "10", stockQuantity: 2, status: "active" }).returning();
@@ -92,6 +95,75 @@ test("warehouse employee is denied employees, permissions, coupons, content, rep
   contentTestCookie = cookie;
   contentTestUserId = user.id;
   await db.update(usersTable).set({ role: "content_manager", permissions: ["content.manage"] }).where(eq(usersTable.id, user.id));
+});
+
+test("help links and branding are PostgreSQL-backed, permission-protected, immediately public and audited", async () => {
+  const { user, password } = await createAdmin("content_manager", ["content.view", "content.manage", "branding.manage"]);
+  const cookie = await login(user.email, password);
+  const [sectionBefore] = await db.select().from(helpSectionsTable).limit(1);
+  assert.ok(sectionBefore);
+  const suffix = randomUUID();
+  let helpId: number | null = null;
+  try {
+    const sectionResponse = await request("/api/admin/content/help/section", cookie, { method: "PUT", body: JSON.stringify({ titleAr: `مساعدة اختبار ${suffix}`, isActive: true }) });
+    assert.equal(sectionResponse.status, 200);
+    const createResponse = await request("/api/admin/content/help/items", cookie, { method: "POST", body: JSON.stringify({ textAr: `رابط اختبار ${suffix}`, textEn: "Test help link", url: "/track", target: "new_tab", icon: "package-search", deviceVisibility: "all", sortOrder: 999, isActive: true, startAt: new Date(Date.now() - 60_000).toISOString(), endAt: new Date(Date.now() + 60_000).toISOString() }) });
+    assert.equal(createResponse.status, 201);
+    const item = await createResponse.json() as { id: number; textEn: string }; helpId = item.id;
+    assert.equal(item.textEn, "Test help link");
+    const publicHelp = await fetch(`${baseUrl}/api/content/help`).then(response => response.json()) as { titleAr: string; isActive: boolean; items: { id: number; target: string }[] };
+    assert.equal(publicHelp.titleAr, `مساعدة اختبار ${suffix}`);
+    assert.equal(publicHelp.items.find(row => row.id === item.id)?.target, "new_tab");
+
+    const adminHelp = await request("/api/admin/content/help", cookie).then(response => response.json()) as { items: { id: number }[] };
+    const reorderResponse = await request("/api/admin/content/help/reorder", cookie, { method: "PUT", body: JSON.stringify({ items: adminHelp.items.map((row, index) => ({ id: row.id, sortOrder: adminHelp.items.length - index })) }) });
+    assert.equal(reorderResponse.status, 200);
+    const hidden = await request("/api/admin/content/help/section", cookie, { method: "PUT", body: JSON.stringify({ titleAr: `مساعدة اختبار ${suffix}`, isActive: false }) });
+    assert.equal(hidden.status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/content/help`).then(response => response.json()) as { isActive: boolean }).isActive, false);
+    await request("/api/admin/content/help/section", cookie, { method: "PUT", body: JSON.stringify({ titleAr: sectionBefore.titleAr, isActive: sectionBefore.isActive }) });
+    const removed = await request(`/api/admin/content/help/items/${item.id}`, cookie, { method: "DELETE" });
+    assert.equal(removed.status, 204); helpId = null;
+
+    const svg = new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40"><rect width="120" height="40" fill="#0f172a"/></svg>`], { type: "image/svg+xml" });
+    const form = new FormData(); form.set("image", svg, "maktaba-test.svg"); form.set("altTextAr", "شعار اختبار مكتبة دوت كوم");
+    const uploaded = await fetch(`${baseUrl}/api/admin/content/branding/main`, { method: "POST", headers: { cookie }, body: form });
+    assert.equal(uploaded.status, 201);
+    const asset = await uploaded.json() as { url: string; width: number; height: number; mimeType: string };
+    assert.deepEqual({ width: asset.width, height: asset.height, mimeType: asset.mimeType }, { width: 120, height: 40, mimeType: "image/svg+xml" });
+    const publicSettings = await fetch(`${baseUrl}/api/content/settings`).then(response => response.json()) as { mainLogoUrl: string };
+    assert.equal(publicSettings.mainLogoUrl, asset.url);
+    const removedLogo = await request("/api/admin/content/branding/main", cookie, { method: "DELETE" });
+    assert.equal(removedLogo.status, 204);
+    assert.equal((await db.select().from(brandAssetsTable).where(eq(brandAssetsTable.kind, "main"))).length, 0);
+
+    const audits = await db.select().from(auditLogsTable).where(eq(auditLogsTable.employeeId, user.id));
+    assert.ok(audits.some(row => row.action === "content.help_item_create"));
+    assert.ok(audits.some(row => row.action === "content.help_reorder"));
+    assert.ok(audits.some(row => row.action === "content.help_item_delete"));
+    assert.ok(audits.some(row => row.action === "branding.asset_upload"));
+    assert.ok(audits.some(row => row.action === "branding.asset_restore_default"));
+  } finally {
+    if (helpId) await db.delete(helpLinksTable).where(eq(helpLinksTable.id, helpId));
+    await db.update(helpSectionsTable).set({ titleAr: sectionBefore.titleAr, isActive: sectionBefore.isActive }).where(eq(helpSectionsTable.id, sectionBefore.id));
+    await db.delete(brandAssetsTable).where(eq(brandAssetsTable.kind, "main"));
+  }
+});
+
+test("registration and profile updates normalize Egyptian phones and persist the selected WhatsApp preference", async () => {
+  const suffix = randomUUID();
+  const subscriber = String(Math.floor(Math.random() * 10_000_000)).padStart(7, "0"); const primary = `0109${subscriber}`; const alternate = `0118${subscriber}`; const arabicAlternate = alternate.replace(/\d/g, digit => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
+  const registration = await fetch(`${baseUrl}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "عميل واتساب", mobile: `+20 ${primary.slice(1)}`, primaryPhoneHasWhatsApp: true, alternatePhone: arabicAlternate, alternatePhoneHasWhatsApp: true, preferredWhatsAppPhone: arabicAlternate, email: `phones-${suffix}@example.test`, password: `Secure-${suffix}` }) });
+  assert.equal(registration.status, 201);
+  const body = await registration.json() as { customer: { id: number; primaryPhone: string; alternatePhone: string; preferredWhatsAppPhone: string } };
+  createdCustomerIds.push(body.customer.id);
+  assert.deepEqual({ primary: body.customer.primaryPhone, alternate: body.customer.alternatePhone, preferred: body.customer.preferredWhatsAppPhone }, { primary, alternate, preferred: alternate });
+  const cookie = registration.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+  const profile = await request("/api/customers/me/profile", cookie, { method: "PATCH", body: JSON.stringify({ primaryPhone: primary, primaryPhoneHasWhatsApp: true, alternatePhone: alternate, alternatePhoneHasWhatsApp: true, preferredWhatsAppPhone: primary }) });
+  assert.equal(profile.status, 200);
+  const saved = (await db.select().from(customersTable).where(eq(customersTable.id, body.customer.id)))[0];
+  assert.equal(saved.preferredWhatsAppPhone, primary);
+  assert.ok((await db.select().from(auditLogsTable).where(and(eq(auditLogsTable.entityType, "customer"), eq(auditLogsTable.entityId, String(body.customer.id)), eq(auditLogsTable.action, "customer.phone_preferences_update")))).length > 0);
 });
 
 test("content manager edits announcement and scheduled hero slides with immediate public visibility and audit logs", async () => {
@@ -265,7 +337,7 @@ test("CORS, request limits, session regeneration, disabled accounts and password
 
   const suffix = randomUUID();
   const customerPassword = `Customer-${suffix}`;
-  const [customer] = await db.insert(customersTable).values({ name: "عميل جلسة", email: `session-${suffix}@example.test`, mobile: `01${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(0, 15), passwordHash: await bcrypt.hash(customerPassword, 12) }).returning();
+  const [customer] = await db.insert(customersTable).values({ name: "عميل جلسة", email: `session-${suffix}@example.test`, primaryPhone: `01${Date.now()}${Math.floor(Math.random() * 1000)}`.slice(0, 15), passwordHash: await bcrypt.hash(customerPassword, 12) }).returning();
   createdCustomerIds.push(customer.id);
   const cartResponse = await fetch(`${baseUrl}/api/cart`);
   const anonymousCookie = cartResponse.headers.get("set-cookie")?.split(";", 1)[0] || "";
@@ -398,13 +470,13 @@ test("coupon archive, product notices and detailed orders are database-backed an
   assert.ok((await db.select().from(couponsTable).where(eq(couponsTable.id, used.id)))[0].archivedAt);
 
   const [product] = await db.insert(productsTable).values({ nameAr: `حجز مسبق ${suffix}`, slug: `notice-${suffix}`, price: "75", stockQuantity: 3, status: "active" }).returning(); createdProductIds.push(product.id);
-  const allowed = await createAdmin("content_manager", ["products.view", "products.edit", "products.notices.manage"]); const allowedCookie = await login(allowed.user.email, allowed.password);
-  const noticeUpdate = await request(`/api/admin/products/${product.id}`, allowedCookie, { method: "PATCH", body: JSON.stringify({ customerNoticeEnabled: true, customerNoticeTitle: "هذا الكتاب متاح بالحجز المسبق", customerNoticeMessage: "سيتم التواصل معك عند توفر الكتاب.", customerNoticeButtonText: "موافق، متابعة الطلب", customerNoticeType: "preorder", customerNoticeTrigger: "add_to_cart", customerNoticeDismissible: false }) });
+  const noticeUpdate = await request(`/api/admin/products/${product.id}`, cookie, { method: "PATCH", body: JSON.stringify({ customerNoticeEnabled: true, customerNoticeTitle: "هذا الكتاب متاح بالحجز المسبق", customerNoticeMessage: "سيتم التواصل معك عند توفر الكتاب.", customerNoticeButtonText: "موافق، متابعة الطلب", customerNoticeIcon: "package", customerNoticeImageUrl: "https://placehold.co/320x240.webp", customerNoticeType: "preorder", customerNoticeTrigger: "add_to_cart", customerNoticeStartAt: new Date(Date.now() - 60_000).toISOString(), customerNoticeEndAt: new Date(Date.now() + 60_000).toISOString(), customerNoticeDismissible: false }) });
   assert.equal(noticeUpdate.status, 200);
   const publicProduct = await fetch(`${baseUrl}/api/products/${product.slug}`).then(response => response.json()) as { customerNoticeEnabled: boolean; customerNoticeTitle: string; customerNoticeTrigger: string };
   assert.deepEqual({ enabled: publicProduct.customerNoticeEnabled, title: publicProduct.customerNoticeTitle, trigger: publicProduct.customerNoticeTrigger }, { enabled: true, title: "هذا الكتاب متاح بالحجز المسبق", trigger: "add_to_cart" });
   const cart = await fetch(`${baseUrl}/api/cart/items`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: product.id, quantity: 1 }) }).then(response => response.json()) as { items: { customerNoticeTitle?: string }[] };
   assert.equal(cart.items[0].customerNoticeTitle, "هذا الكتاب متاح بالحجز المسبق");
+  assert.ok((await db.select().from(auditLogsTable).where(and(eq(auditLogsTable.entityId, String(product.id)), eq(auditLogsTable.action, "product.notice_update")))).length > 0);
   const denied = await createAdmin("content_manager", ["products.view", "products.edit", "orders.view"]); const deniedCookie = await login(denied.user.email, denied.password);
   assert.equal((await request(`/api/admin/products/${product.id}`, deniedCookie, { method: "PATCH", body: JSON.stringify({ customerNoticeEnabled: false }) })).status, 403);
 
@@ -412,4 +484,14 @@ test("coupon archive, product notices and detailed orders are database-backed an
   const detailBody = await detail.json() as { shippingRuleSnapshot: { minDeliveryDays: number }; inventoryMovements: unknown[]; auditHistory: unknown[] };
   assert.equal(detailBody.shippingRuleSnapshot.minDeliveryDays, 1); assert.ok(Array.isArray(detailBody.inventoryMovements)); assert.ok(Array.isArray(detailBody.auditHistory));
   assert.equal((await request(`/api/admin/orders/${order.id}/status`, deniedCookie, { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) })).status, 403);
+  assert.equal((await request(`/api/admin/orders/${order.id}/whatsapp`, deniedCookie, { method: "POST" })).status, 403);
+  const whatsAppResponse = await request(`/api/admin/orders/${order.id}/whatsapp`, cookie, { method: "POST" });
+  assert.equal(whatsAppResponse.status, 200);
+  const whatsApp = await whatsAppResponse.json() as { phone: string; message: string; url: string };
+  assert.equal(whatsApp.phone, "201000000000");
+  assert.match(whatsApp.message, new RegExp(order.orderNumber));
+  assert.match(whatsApp.message, /قيمة المنتجات: 50\.00 ج\.م/);
+  assert.match(whatsApp.url, /^https:\/\/wa\.me\/201000000000\?text=/);
+  const [whatsAppAudit] = await db.select().from(auditLogsTable).where(and(eq(auditLogsTable.employeeId, adminCredentials.user.id), eq(auditLogsTable.action, "order.whatsapp_open"))).orderBy(desc(auditLogsTable.createdAt)).limit(1);
+  assert.equal(whatsAppAudit.employeeName, adminCredentials.user.name);
 });

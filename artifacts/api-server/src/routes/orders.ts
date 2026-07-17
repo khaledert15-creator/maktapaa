@@ -5,15 +5,16 @@ import { calculateShipping } from "../services/shipping";
 import { enrichProductSummaries } from "../services/catalog";
 import { CouponValidationError, recordCouponUsage, validateCoupon } from "../services/coupons";
 import { parseBody } from "../lib/validation";
-import { z } from "@workspace/api-zod";
+import { egyptianPhoneSchema, optionalEgyptianPhoneSchema, resolvePreferredWhatsAppPhone, z } from "@workspace/api-zod";
 import { rateLimit } from "../lib/rate-limit";
+import { writeAuditLog } from "../services/audit";
 
 const router: IRouter = Router();
 const orderRateLimit = rateLimit({ namespace: "order-create", windowMs: 15 * 60_000, max: 20 });
-const orderCreateSchema = z.object({ customerName: z.string().trim().min(2).max(200), mobile: z.string().trim().min(8).max(30), altMobile: z.string().trim().max(30).nullable().optional(), governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), paymentMethod: z.literal("cash_on_delivery").optional(), couponCode: z.string().trim().max(50).transform(value => value.toUpperCase()).nullable().optional(), checkoutToken: z.string().min(12).max(100).nullable().optional(), cartItems: z.array(z.object({ productId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive().max(99) })).max(100).optional() });
+const orderCreateSchema = z.object({ customerName: z.string().trim().min(2).max(200), mobile: egyptianPhoneSchema, primaryPhoneHasWhatsApp: z.boolean().default(true), altMobile: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().default(false), preferredWhatsAppPhone: optionalEgyptianPhoneSchema, governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), paymentMethod: z.literal("cash_on_delivery").optional(), couponCode: z.string().trim().max(50).transform(value => value.toUpperCase()).nullable().optional(), checkoutToken: z.string().min(12).max(100).nullable().optional(), cartItems: z.array(z.object({ productId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive().max(99) })).max(100).optional() });
 const cancellationRequestSchema = z.object({ reason: z.string().trim().min(5).max(500) });
-const profileSchema = z.object({ name: z.string().trim().min(2).max(200).optional(), email: z.string().email().max(200).nullable().optional(), mobile: z.string().trim().min(8).max(30).optional() });
-const addressSchema = z.object({ governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().trim().max(500).nullable().optional(), isDefault: z.boolean().optional() });
+const profileSchema = z.object({ name: z.string().trim().min(2).max(200).optional(), email: z.string().email().max(200).nullable().optional(), mobile: egyptianPhoneSchema.optional(), primaryPhone: egyptianPhoneSchema.optional(), primaryPhoneHasWhatsApp: z.boolean().optional(), alternatePhone: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().optional(), preferredWhatsAppPhone: optionalEgyptianPhoneSchema });
+const addressSchema = z.object({ governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().trim().max(500).nullable().optional(), primaryPhone: egyptianPhoneSchema.optional(), primaryPhoneHasWhatsApp: z.boolean().optional(), alternatePhone: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().optional(), preferredWhatsAppPhone: optionalEgyptianPhoneSchema, isDefault: z.boolean().optional() });
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -28,7 +29,7 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
   return {
     id: order.id, orderNumber: order.orderNumber,
     status: order.status, paymentStatus: order.paymentStatus, paymentMethod: order.paymentMethod,
-    customerName: order.customerName, mobile: order.mobile, altMobile: order.altMobile,
+    customerName: order.customerName, mobile: order.mobile, primaryPhone: order.mobile, primaryPhoneHasWhatsApp: order.primaryPhoneHasWhatsApp, altMobile: order.altMobile, alternatePhone: order.altMobile, alternatePhoneHasWhatsApp: order.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: order.preferredWhatsAppPhone,
     governorate: order.governorateName, city: order.city,
     detailedAddress: order.detailedAddress, landmark: order.landmark,
     deliveryNotes: order.deliveryNotes, orderNotes: order.orderNotes,
@@ -59,6 +60,8 @@ router.post("/orders", orderRateLimit, async (req, res): Promise<void> => {
     customerName, mobile, altMobile, governorateId, city, detailedAddress,
     landmark, deliveryNotes, orderNotes, couponCode, checkoutToken,
   } = input;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone: mobile, primaryPhoneHasWhatsApp: input.primaryPhoneHasWhatsApp, alternatePhone: altMobile, alternatePhoneHasWhatsApp: input.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل يجب أن يكون رقمًا صالحًا ومحددًا عليه واتساب" }); return; }
   const cartItems = input.cartItems ?? req.session.cart?.items;
 
   if (checkoutToken) {
@@ -126,7 +129,7 @@ router.post("/orders", orderRateLimit, async (req, res): Promise<void> => {
       const shippingCost = shipping.finalCost;
       const total = Math.max(0, subtotal - couponDiscount + shippingCost);
       const [createdOrder] = await tx.insert(ordersTable).values({
-        orderNumber, checkoutToken: checkoutToken || null, customerId, customerName, mobile, altMobile: altMobile || null,
+        orderNumber, checkoutToken: checkoutToken || null, customerId, customerName, mobile, primaryPhoneHasWhatsApp: input.primaryPhoneHasWhatsApp, altMobile: altMobile || null, alternatePhoneHasWhatsApp: input.alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
         governorateId: gov.id, governorateName: gov.nameAr,
         city, detailedAddress, landmark: landmark || null,
         deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
@@ -206,8 +209,10 @@ router.get("/orders/track", async (req, res): Promise<void> => {
   const { orderNumber, mobile } = req.query as { orderNumber: string; mobile: string };
   if (!orderNumber || !mobile) { res.status(400).json({ error: "رقم الطلب والهاتف مطلوبان" }); return; }
 
+  const normalizedMobile = egyptianPhoneSchema.safeParse(mobile);
+  if (!normalizedMobile.success) { res.status(400).json({ error: "رقم الهاتف غير صحيح" }); return; }
   const [order] = await db.select().from(ordersTable)
-    .where(and(eq(ordersTable.orderNumber, orderNumber), eq(ordersTable.mobile, mobile)));
+    .where(and(eq(ordersTable.orderNumber, orderNumber), eq(ordersTable.mobile, normalizedMobile.data)));
 
   if (!order) { res.status(404).json({ error: "الطلب غير موجود" }); return; }
 
@@ -328,13 +333,23 @@ router.patch("/customers/me/profile", async (req, res): Promise<void> => {
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
   const input = parseBody(profileSchema, req.body, res); if (!input) return;
-  const { name, email, mobile } = input;
+  const [existingCustomer] = await db.select().from(customersTable).where(eq(customersTable.id, req.session.customerId as number));
+  if (!existingCustomer) { res.status(404).json({ error: "الحساب غير موجود" }); return; }
+  if (input.mobile && input.primaryPhone && input.mobile !== input.primaryPhone) { res.status(400).json({ error: "رقم الهاتف الأساسي غير متطابق" }); return; }
+  const primaryPhone = input.primaryPhone ?? input.mobile ?? existingCustomer.primaryPhone;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? existingCustomer.primaryPhoneHasWhatsApp;
+  const alternatePhone = input.alternatePhone === undefined ? existingCustomer.alternatePhone : input.alternatePhone;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? existingCustomer.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? existingCustomer.preferredWhatsAppPhone : input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
   const [customer] = await db.update(customersTable)
-    .set({ ...(name && { name }), ...(email && { email }), ...(mobile && { mobile }) })
+    .set({ ...(input.name && { name: input.name }), ...(input.email !== undefined && { email: input.email?.toLowerCase() || null }), primaryPhone, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone })
     .where(eq(customersTable.id, req.session.customerId as number))
     .returning();
 
-  res.json({ id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt });
+  await writeAuditLog(req, { action: "customer.phone_preferences_update", entityType: "customer", entityId: customer.id, description: "تعديل أرقام الهاتف وتفضيل واتساب من حساب العميل", beforeData: { primaryPhone: existingCustomer.primaryPhone, primaryPhoneHasWhatsApp: existingCustomer.primaryPhoneHasWhatsApp, alternatePhone: existingCustomer.alternatePhone, alternatePhoneHasWhatsApp: existingCustomer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: existingCustomer.preferredWhatsAppPhone }, afterData: { primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone } });
+
+  res.json({ id: customer.id, name: customer.name, email: customer.email, mobile: customer.primaryPhone, primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone, isBlocked: customer.isBlocked, createdAt: customer.createdAt });
 });
 
 // Favorites
@@ -382,6 +397,11 @@ router.get("/customers/me/addresses", async (req, res): Promise<void> => {
     city: address.city,
     detailedAddress: address.detailedAddress,
     landmark: address.landmark,
+    primaryPhone: address.primaryPhone,
+    primaryPhoneHasWhatsApp: address.primaryPhoneHasWhatsApp,
+    alternatePhone: address.alternatePhone,
+    alternatePhoneHasWhatsApp: address.alternatePhoneHasWhatsApp,
+    preferredWhatsAppPhone: address.preferredWhatsAppPhone,
     isDefault: address.isDefault,
   })));
 });
@@ -394,6 +414,14 @@ router.post("/customers/me/addresses", async (req, res): Promise<void> => {
     .where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
 
+  const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, req.session.customerId));
+  if (!customer) { res.status(404).json({ error: "الحساب غير موجود" }); return; }
+  const primaryPhone = input.primaryPhone ?? customer.primaryPhone;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? customer.primaryPhoneHasWhatsApp;
+  const alternatePhone = input.alternatePhone === undefined ? customer.alternatePhone : input.alternatePhone;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? customer.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? customer.preferredWhatsAppPhone : input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
   const created = await db.transaction(async tx => {
     const [firstAddress] = await tx.select({ id: addressesTable.id }).from(addressesTable)
       .where(eq(addressesTable.customerId, req.session.customerId!)).limit(1);
@@ -409,11 +437,13 @@ router.post("/customers/me/addresses", async (req, res): Promise<void> => {
       city: city.trim(),
       detailedAddress: detailedAddress.trim(),
       landmark: landmark?.trim() || null,
+      primaryPhone, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
       isDefault: makeDefault,
     }).returning();
     return address;
   });
-  res.status(201).json({ id: created.id, governorateId: created.governorateId, governorate: created.governorateName, city: created.city, detailedAddress: created.detailedAddress, landmark: created.landmark, isDefault: created.isDefault });
+  await writeAuditLog(req, { action: "customer.address_phone_create", entityType: "customer_address", entityId: created.id, description: "إضافة عنوان وأرقام استلام للعميل", afterData: { customerId: created.customerId, primaryPhone: created.primaryPhone, primaryPhoneHasWhatsApp: created.primaryPhoneHasWhatsApp, alternatePhone: created.alternatePhone, alternatePhoneHasWhatsApp: created.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: created.preferredWhatsAppPhone } });
+  res.status(201).json({ id: created.id, governorateId: created.governorateId, governorate: created.governorateName, city: created.city, detailedAddress: created.detailedAddress, landmark: created.landmark, primaryPhone: created.primaryPhone, primaryPhoneHasWhatsApp: created.primaryPhoneHasWhatsApp, alternatePhone: created.alternatePhone, alternatePhoneHasWhatsApp: created.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: created.preferredWhatsAppPhone, isDefault: created.isDefault });
 });
 
 router.patch("/customers/me/addresses/:id", async (req, res): Promise<void> => {
@@ -427,6 +457,12 @@ router.patch("/customers/me/addresses/:id", async (req, res): Promise<void> => {
   const governorateId = input.governorateId ?? existing.governorateId;
   const [governorate] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
+  const primaryPhone = input.primaryPhone ?? existing.primaryPhone;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? existing.primaryPhoneHasWhatsApp;
+  const alternatePhone = input.alternatePhone === undefined ? existing.alternatePhone : input.alternatePhone;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? existing.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = primaryPhone ? resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? existing.preferredWhatsAppPhone : input.preferredWhatsAppPhone }) : null;
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
   const updated = await db.transaction(async tx => {
     if (input.isDefault) {
       await tx.update(addressesTable).set({ isDefault: false }).where(eq(addressesTable.customerId, req.session.customerId!));
@@ -437,11 +473,13 @@ router.patch("/customers/me/addresses/:id", async (req, res): Promise<void> => {
       city: input.city || existing.city,
       detailedAddress: input.detailedAddress || existing.detailedAddress,
       landmark: input.landmark === undefined ? existing.landmark : input.landmark || null,
+      primaryPhone, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
       isDefault: input.isDefault === undefined ? existing.isDefault : input.isDefault,
     }).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId!))).returning();
     return address;
   });
-  res.json({ id: updated.id, governorateId: updated.governorateId, governorate: updated.governorateName, city: updated.city, detailedAddress: updated.detailedAddress, landmark: updated.landmark, isDefault: updated.isDefault });
+  await writeAuditLog(req, { action: "customer.address_phone_update", entityType: "customer_address", entityId: updated.id, description: "تعديل عنوان وأرقام استلام للعميل", beforeData: { primaryPhone: existing.primaryPhone, primaryPhoneHasWhatsApp: existing.primaryPhoneHasWhatsApp, alternatePhone: existing.alternatePhone, alternatePhoneHasWhatsApp: existing.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: existing.preferredWhatsAppPhone }, afterData: { primaryPhone: updated.primaryPhone, primaryPhoneHasWhatsApp: updated.primaryPhoneHasWhatsApp, alternatePhone: updated.alternatePhone, alternatePhoneHasWhatsApp: updated.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: updated.preferredWhatsAppPhone } });
+  res.json({ id: updated.id, governorateId: updated.governorateId, governorate: updated.governorateName, city: updated.city, detailedAddress: updated.detailedAddress, landmark: updated.landmark, primaryPhone: updated.primaryPhone, primaryPhoneHasWhatsApp: updated.primaryPhoneHasWhatsApp, alternatePhone: updated.alternatePhone, alternatePhoneHasWhatsApp: updated.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: updated.preferredWhatsAppPhone, isDefault: updated.isDefault });
 });
 
 router.delete("/customers/me/addresses/:id", async (req, res): Promise<void> => {

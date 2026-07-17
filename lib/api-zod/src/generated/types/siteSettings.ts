@@ -12,6 +12,20 @@ export interface SiteSettings {
   /** @nullable */
   logoUrl?: string | null;
   /** @nullable */
+  mainLogoUrl?: string | null;
+  /** @nullable */
+  darkBackgroundLogoUrl?: string | null;
+  /** @nullable */
+  lightBackgroundLogoUrl?: string | null;
+  /** @nullable */
+  mobileLogoUrl?: string | null;
+  /** @nullable */
+  faviconUrl?: string | null;
+  /** @nullable */
+  adminLogoUrl?: string | null;
+  /** @nullable */
+  socialImageUrl?: string | null;
+  /** @nullable */
   whatsappNumber?: string | null;
   /** @nullable */
   phoneNumber?: string | null;

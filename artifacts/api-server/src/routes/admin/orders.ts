@@ -5,12 +5,13 @@ import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 import { writeAuditLog } from "../../services/audit";
 import { decideCancellation, OrderStateError, transitionOrderStatus } from "../../services/order-state";
 import { parseBody } from "../../lib/validation";
-import { z } from "@workspace/api-zod";
+import { egyptianPhoneSchema, optionalEgyptianPhoneSchema, resolvePreferredWhatsAppPhone, z } from "@workspace/api-zod";
+import { buildOrderWhatsAppLink } from "../../services/order-whatsapp";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
 const orderStatuses = z.enum(["new", "awaiting_confirmation", "confirmed", "preparing", "ready_for_shipping", "shipped", "out_for_delivery", "delivered", "delivery_failed", "returned", "partially_returned", "cancelled"]);
-const orderEditSchema = z.object({ customerName: z.string().trim().min(2).max(200).optional(), mobile: z.string().trim().min(8).max(30).optional(), altMobile: z.string().trim().max(30).nullable().optional(), city: z.string().trim().min(2).max(200).optional(), detailedAddress: z.string().trim().min(5).max(2000).optional(), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), internalNotes: z.string().max(5000).nullable().optional(), trackingNumber: z.string().max(200).nullable().optional(), shippingCompany: z.string().max(200).nullable().optional(), estimatedDeliveryDate: z.string().max(100).nullable().optional() });
+const orderEditSchema = z.object({ customerName: z.string().trim().min(2).max(200).optional(), mobile: egyptianPhoneSchema.optional(), primaryPhoneHasWhatsApp: z.boolean().optional(), altMobile: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().optional(), preferredWhatsAppPhone: optionalEgyptianPhoneSchema, city: z.string().trim().min(2).max(200).optional(), detailedAddress: z.string().trim().min(5).max(2000).optional(), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), internalNotes: z.string().max(5000).nullable().optional(), trackingNumber: z.string().max(200).nullable().optional(), shippingCompany: z.string().max(200).nullable().optional(), estimatedDeliveryDate: z.string().max(100).nullable().optional() });
 const statusSchema = z.object({ status: orderStatuses, notes: z.string().max(2000).nullable().optional(), trackingNumber: z.string().max(200).nullable().optional(), shippingCompany: z.string().max(200).nullable().optional() });
 const cancellationSchema = z.object({ decision: z.enum(["approved", "rejected"]), notes: z.string().max(2000).nullable().optional() });
 
@@ -19,7 +20,7 @@ function mapAdminOrder(order: typeof ordersTable.$inferSelect, items: typeof ord
   return {
     id: order.id, orderNumber: order.orderNumber,
     status: order.status, paymentStatus: order.paymentStatus, paymentMethod: order.paymentMethod,
-    customerName: order.customerName, mobile: order.mobile, altMobile: order.altMobile,
+    customerName: order.customerName, mobile: order.mobile, primaryPhone: order.mobile, primaryPhoneHasWhatsApp: order.primaryPhoneHasWhatsApp, altMobile: order.altMobile, alternatePhone: order.altMobile, alternatePhoneHasWhatsApp: order.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: order.preferredWhatsAppPhone,
     governorate: order.governorateName, city: order.city,
     detailedAddress: order.detailedAddress, landmark: order.landmark,
     deliveryNotes: order.deliveryNotes, orderNotes: order.orderNotes, internalNotes: order.internalNotes,
@@ -95,22 +96,40 @@ router.get("/admin/orders/:id", requireAdminPermission("orders.view"), async (re
   res.json(mapAdminOrder(order, items, history, movements.map(({ movement, productNameAr }) => ({ ...movement, productNameAr })), audits, cancellationRequests));
 });
 
+router.post("/admin/orders/:id/whatsapp", requireAdminPermission("orders.view"), requireAdminPermission("orders.whatsapp"), async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!order) { res.status(404).json({ error: "الطلب غير موجود" }); return; }
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, id));
+  const link = buildOrderWhatsAppLink(order, items);
+  if (!link) { res.status(409).json({ error: "لا يوجد رقم مسجل عليه واتساب لهذا الطلب" }); return; }
+  await writeAuditLog(req, { action: "order.whatsapp_open", entityType: "order", entityId: id, description: `فتح محادثة واتساب للطلب ${order.orderNumber}`, afterData: { phone: link.phone } });
+  res.json(link);
+});
+
 router.patch("/admin/orders/:id", requireAdminPermission("orders.edit"), async (req, res): Promise<void> => {
   const input = parseBody(orderEditSchema, req.body, res); if (!input) return;
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { customerName, mobile, altMobile, city, detailedAddress, landmark, deliveryNotes, orderNotes, internalNotes, trackingNumber, shippingCompany, estimatedDeliveryDate } = input;
   const [before] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!before) { res.status(404).json({ error: "الطلب غير موجود أو تم حذفه" }); return; }
+  const primaryPhone = mobile ?? before.mobile;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? before.primaryPhoneHasWhatsApp;
+  const alternatePhone = altMobile === undefined ? before.altMobile : altMobile;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? before.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? before.preferredWhatsAppPhone : input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
 
   const [order] = await db.update(ordersTable).set({
-    ...(customerName && { customerName }), ...(mobile && { mobile }), ...(altMobile !== undefined && { altMobile }),
+    ...(customerName && { customerName }), mobile: primaryPhone, primaryPhoneHasWhatsApp, altMobile: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
     ...(city && { city }), ...(detailedAddress && { detailedAddress }), ...(landmark !== undefined && { landmark }),
     ...(deliveryNotes !== undefined && { deliveryNotes }), ...(orderNotes !== undefined && { orderNotes }),
     ...(internalNotes !== undefined && { internalNotes }), ...(trackingNumber !== undefined && { trackingNumber }),
     ...(shippingCompany !== undefined && { shippingCompany }), ...(estimatedDeliveryDate !== undefined && { estimatedDeliveryDate }),
   }).where(eq(ordersTable.id, id)).returning();
 
-  if (!order) { res.status(404).json({ error: "الطلب غير موجود أو تم حذفه" }); return; }
   await writeAuditLog(req, { action: "order.update", entityType: "order", entityId: id, description: `تعديل الطلب ${order.orderNumber}`, beforeData: before ?? null, afterData: order });
 
   const [items, history] = await Promise.all([

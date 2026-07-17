@@ -30,6 +30,7 @@ const productSchema = z.object({
   sortOrder: z.coerce.number().int().min(0).optional(), seoTitle: z.string().max(300).nullable().optional(), seoDescription: z.string().max(1000).nullable().optional(), internalNotes: z.string().max(5000).nullable().optional(),
   customerNoticeEnabled: z.boolean().optional(), customerNoticeTitle: z.string().trim().max(300).nullable().optional(),
   customerNoticeMessage: z.string().trim().max(5000).nullable().optional(), customerNoticeButtonText: z.string().trim().max(100).nullable().optional(),
+  customerNoticeIcon: z.enum(["info", "warning", "package", "clock", "book", "truck"]).nullable().optional(), customerNoticeImageUrl: z.string().trim().url().max(2000).nullable().optional(),
   customerNoticeType: z.enum(["information", "warning", "preorder", "delayed_delivery", "custom"]).nullable().optional(),
   customerNoticeTrigger: z.enum(["product_open", "add_to_cart", "buy_now", "checkout", "first_interaction"]).nullable().optional(),
   customerNoticeStartAt: z.coerce.date().nullable().optional(), customerNoticeEndAt: z.coerce.date().nullable().optional(),
@@ -65,6 +66,7 @@ function mapAdminProduct(p: typeof productsTable.$inferSelect) {
     internalNotes: p.internalNotes,
     customerNoticeEnabled: p.customerNoticeEnabled, customerNoticeTitle: p.customerNoticeTitle,
     customerNoticeMessage: p.customerNoticeMessage, customerNoticeButtonText: p.customerNoticeButtonText,
+    customerNoticeIcon: p.customerNoticeIcon, customerNoticeImageUrl: p.customerNoticeImageUrl,
     customerNoticeType: p.customerNoticeType, customerNoticeTrigger: p.customerNoticeTrigger,
     customerNoticeStartAt: p.customerNoticeStartAt, customerNoticeEndAt: p.customerNoticeEndAt,
     customerNoticeDismissible: p.customerNoticeDismissible,
@@ -131,7 +133,8 @@ router.get("/admin/products/:id", requireAdminPermission("products.view"), async
 router.patch("/admin/products/:id", requireAdminPermission("products.edit"), async (req, res): Promise<void> => {
   const input = parseBody(productUpdateSchema, req.body, res); if (!input) return;
   if ((input.price !== undefined || input.oldPrice !== undefined || input.purchasePrice !== undefined) && !hasAdminPermission(req, "prices.edit")) { res.status(403).json({ error: "ليس لديك صلاحية تعديل الأسعار" }); return; }
-  if (Object.keys(input).some(key => key.startsWith("customerNotice")) && !hasAdminPermission(req, "products.notices.manage")) { res.status(403).json({ error: "ليس لديك صلاحية إدارة رسائل تنبيه العملاء" }); return; }
+  const changesNotice = Object.keys(input).some(key => key.startsWith("customerNotice"));
+  if (changesNotice && !hasAdminPermission(req, "products.notices.manage")) { res.status(403).json({ error: "ليس لديك صلاحية إدارة رسائل تنبيه العملاء" }); return; }
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   const { price, oldPrice, purchasePrice, ...rest } = input;
@@ -144,7 +147,7 @@ router.patch("/admin/products/:id", requireAdminPermission("products.edit"), asy
 
   const [product] = await db.update(productsTable).set(updateData).where(eq(productsTable.id, id)).returning();
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
-  await writeAuditLog(req, { action: "product.update", entityType: "product", entityId: id, description: `تعديل المنتج ${product.nameAr}`, beforeData: before ? mapAdminProduct(before) : null, afterData: mapAdminProduct(product) });
+  await writeAuditLog(req, { action: changesNotice ? "product.notice_update" : "product.update", entityType: "product", entityId: id, description: changesNotice ? `تعديل رسالة العميل للمنتج ${product.nameAr}` : `تعديل المنتج ${product.nameAr}`, beforeData: before ? mapAdminProduct(before) : null, afterData: mapAdminProduct(product) });
   res.json(mapAdminProduct(product));
 });
 

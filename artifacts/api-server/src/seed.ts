@@ -344,9 +344,9 @@ async function seed() {
     }
 
     const employeeFixtures = [
-      { name: "مسؤول المبيعات", email: "sales@maktaba.com", role: "sales" as const, permissions: ["dashboard.view", "orders.view", "orders.edit", "customers.view"] },
+      { name: "مسؤول المبيعات", email: "sales@maktaba.com", role: "sales" as const, permissions: ["dashboard.view", "orders.view", "orders.edit", "orders.whatsapp", "customers.view", "customers.edit"] },
       { name: "أمين المخزن", email: "warehouse@maktaba.com", role: "warehouse" as const, permissions: ["products.view", "inventory.view", "inventory.adjust"] },
-      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "products.notices.manage", "classifications.view", "classifications.manage", "content.manage"] },
+      { name: "مدير المحتوى", email: "content@maktaba.com", role: "content_manager" as const, permissions: ["products.view", "products.create", "products.edit", "products.images.manage", "products.notices.manage", "classifications.view", "classifications.manage", "content.view", "content.manage", "branding.manage"] },
     ];
     const employeePasswordHash = await bcrypt.hash("Employee@2025", 12);
     for (const employee of employeeFixtures) {
@@ -365,9 +365,9 @@ async function seed() {
       if (!existingOptions.length) await tx.insert(classificationOptionsTable).values(fixture.values.map((nameAr, index) => ({ kind: fixture.kind, nameAr, sortOrder: index + 1 })));
     }
 
-    let [customer] = await tx.select().from(customersTable).where(eq(customersTable.mobile, "01012345678"));
+    let [customer] = await tx.select().from(customersTable).where(eq(customersTable.primaryPhone, "01012345678"));
     if (!customer) {
-      [customer] = await tx.insert(customersTable).values({ name: "أحمد محمود", mobile: "01012345678", email: "ahmed@example.com", passwordHash: await bcrypt.hash("Customer@2025", 12) }).returning();
+      [customer] = await tx.insert(customersTable).values({ name: "أحمد محمود", primaryPhone: "01012345678", preferredWhatsAppPhone: "01012345678", email: "ahmed@example.com", passwordHash: await bcrypt.hash("Customer@2025", 12) }).returning();
     }
     if (customer && cairo) {
       const [savedAddress] = await tx.select().from(addressesTable).where(eq(addressesTable.customerId, customer.id));
@@ -384,7 +384,7 @@ async function seed() {
       const subtotal = Number(firstProduct.price) * 2;
       const [order] = await tx.insert(ordersTable).values({
         orderNumber: "MK-SEED-0001", customerId: customer.id, customerName: customer.name,
-        mobile: customer.mobile, governorateId: cairo.id, governorateName: cairo.nameAr,
+        mobile: customer.primaryPhone, governorateId: cairo.id, governorateName: cairo.nameAr,
         city: "مدينة نصر", detailedAddress: "١٢ شارع المدرسة، الدور الثالث",
         status: "confirmed", paymentMethod: "cash_on_delivery", paymentStatus: "cash_on_delivery",
         subtotal: String(subtotal), shippingCost: cairo.shippingCost, shippingBaseCost: cairo.shippingCost,

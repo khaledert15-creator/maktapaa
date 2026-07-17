@@ -14,5 +14,13 @@ export interface Address {
   detailedAddress: string;
   /** @nullable */
   landmark?: string | null;
+  /** @nullable */
+  primaryPhone?: string | null;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isDefault?: boolean;
 }

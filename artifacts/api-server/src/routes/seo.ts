@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { categoriesTable, db, productImagesTable, productsTable, publishersTable } from "@workspace/db";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { brandAssetsTable, categoriesTable, db, productImagesTable, productsTable, publishersTable, siteSettingsTable } from "@workspace/db";
 import { config } from "../lib/config";
 
 const router: IRouter = Router();
@@ -32,7 +32,11 @@ function replaceMeta(document: string, attribute: "name" | "property", key: stri
 async function renderPage(input: { status?: number; title: string; description: string; canonicalPath: string; image?: string | null; type?: "website" | "product"; jsonLd?: unknown[]; body: string }) {
   let document = await template();
   const canonical = absolute(input.canonicalPath);
-  const image = input.image ? absolute(input.image) : absolute("/social-default.svg");
+  const [assets, settingsRows] = await Promise.all([db.select().from(brandAssetsTable), db.select().from(siteSettingsTable).where(inArray(siteSettingsTable.key, ["storeNameAr", "logoUrl"]))]);
+  const settings = Object.fromEntries(settingsRows.map(row => [row.key, row.value || ""]));
+  const mainLogo = assets.find(asset => asset.kind === "main")?.url || settings.logoUrl || "/favicon.svg";
+  const socialImage = assets.find(asset => asset.kind === "social")?.url || "/social-default.svg";
+  const image = input.image ? absolute(input.image) : absolute(socialImage);
   document = document.replace(/<title>[^<]*<\/title>/i, `<title>${html(input.title)}</title>`);
   document = replaceMeta(document, "name", "description", input.description);
   document = replaceMeta(document, "property", "og:title", input.title);
@@ -43,7 +47,8 @@ async function renderPage(input: { status?: number; title: string; description: 
   document = replaceMeta(document, "name", "twitter:card", "summary_large_image");
   document = replaceMeta(document, "name", "twitter:title", input.title);
   document = replaceMeta(document, "name", "twitter:description", input.description);
-  document = document.replace("</head>", `  <link rel="canonical" href="${html(canonical)}" />\n${(input.jsonLd ?? []).map((entry, index) => `  <script id="server-json-ld-${index}" type="application/ld+json">${safeJson(entry)}</script>`).join("\n")}\n</head>`);
+  const structured = (input.jsonLd ?? []).map(entry => typeof entry === "object" && entry && "@type" in entry && entry["@type" as keyof typeof entry] === "Organization" ? { ...entry, name: settings.storeNameAr || "مكتبة دوت كوم", logo: absolute(mainLogo) } : entry);
+  document = document.replace("</head>", `  <link rel="canonical" href="${html(canonical)}" />\n${structured.map((entry, index) => `  <script id="server-json-ld-${index}" type="application/ld+json">${safeJson(entry)}</script>`).join("\n")}\n</head>`);
   document = document.replace('<div id="root"></div>', `<div id="root">${input.body}</div>`);
   return { status: input.status ?? 200, document };
 }

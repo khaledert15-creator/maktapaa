@@ -1,12 +1,14 @@
 import { useEffect } from "react";
+import { getGetSiteSettingsQueryKey, useGetSiteSettings } from "@workspace/api-client-react";
 
 type JsonLd = Record<string, unknown> | Record<string, unknown>[];
 
 export function Seo({ title, description, image, canonicalPath, jsonLd }: { title: string; description?: string | null; image?: string | null; canonicalPath?: string; jsonLd?: JsonLd }) {
+  const { data: settings } = useGetSiteSettings({ query: { queryKey: getGetSiteSettingsQueryKey(), staleTime: 60_000 } });
   useEffect(() => {
     document.title = title;
     const canonical = new URL(canonicalPath || window.location.pathname, window.location.origin).href;
-    const socialImage = new URL(image || "/social-default.svg", window.location.origin).href;
+    const socialImage = new URL(image || settings?.socialImageUrl || "/social-default.svg", window.location.origin).href;
     const setMeta = (name: string, content: string, property = false) => {
       const selector = property ? `meta[property="${name}"]` : `meta[name="${name}"]`;
       let tag = document.head.querySelector<HTMLMetaElement>(selector);
@@ -24,6 +26,6 @@ export function Seo({ title, description, image, canonicalPath, jsonLd }: { titl
       const script = document.createElement("script"); script.dataset.clientJsonLd = "true"; script.type = "application/ld+json"; script.textContent = JSON.stringify(entry); document.head.appendChild(script);
     }
     return () => document.head.querySelectorAll("script[data-client-json-ld]").forEach(script => script.remove());
-  }, [title, description, image, canonicalPath, jsonLd]);
+  }, [title, description, image, canonicalPath, jsonLd, settings?.socialImageUrl]);
   return null;
 }

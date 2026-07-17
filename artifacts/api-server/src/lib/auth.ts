@@ -47,7 +47,7 @@ export function requireAdminPermission(permission: string) {
     if (
       req.session.adminRole === "owner" ||
       req.session.adminRole === "administrator" ||
-      req.session.adminPermissions?.includes(permission)
+      hasPermission(req.session.adminPermissions, permission)
     ) {
       next();
       return;
@@ -58,7 +58,13 @@ export function requireAdminPermission(permission: string) {
 }
 
 export function hasAdminPermission(req: Request, permission: string): boolean {
-  return req.session.adminRole === "owner" || req.session.adminRole === "administrator" || Boolean(req.session.adminPermissions?.includes(permission));
+  return req.session.adminRole === "owner" || req.session.adminRole === "administrator" || hasPermission(req.session.adminPermissions, permission);
+}
+
+function hasPermission(permissions: string[] | undefined, permission: string): boolean {
+  if (permissions?.includes(permission)) return true;
+  if (permission === "content.view") return Boolean(permissions?.includes("content.manage") || permissions?.includes("branding.manage"));
+  return false;
 }
 
 export async function getCustomerFromSession(req: Request) {

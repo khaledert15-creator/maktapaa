@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useLoginCustomer, getGetCurrentCustomerQueryKey } from "@workspace/api-client-react";
+import { useLoginCustomer, getGetCurrentCustomerQueryKey, getGetSiteSettingsQueryKey, useGetSiteSettings } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ export default function Login() {
   const { setCustomer } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: settings } = useGetSiteSettings({ query: { queryKey: getGetSiteSettingsQueryKey(), staleTime: 60_000 } });
+  const logo = settings?.lightBackgroundLogoUrl || settings?.mainLogoUrl || settings?.logoUrl;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -49,8 +51,9 @@ export default function Login() {
     <div className="container mx-auto px-4 py-16 flex justify-center items-center min-h-[calc(100vh-200px)]">
       <Card className="w-full max-w-md shadow-lg border-border/50">
         <CardHeader className="text-center space-y-2">
+          {logo && <img src={logo} alt={settings?.storeNameAr || "مكتبة دوت كوم"} className="mx-auto mb-3 max-h-16 max-w-56 object-contain" />}
           <CardTitle className="text-2xl font-black text-primary">تسجيل الدخول</CardTitle>
-          <CardDescription>مرحباً بك مجدداً في مكتبة دوت كوم</CardDescription>
+          <CardDescription>مرحباً بك مجدداً في {settings?.storeNameAr || "مكتبة دوت كوم"}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
