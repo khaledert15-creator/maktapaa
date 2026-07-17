@@ -1,5 +1,212 @@
-import { AppRouter } from '@/AppRouter';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useLocation, useParams } from 'wouter';
+import {
+  AdminProductInputStatus,
+  useAdminCreateProduct,
+  useAdminGetOrder,
+  useAdminGetProduct,
+  useAdminHandleCancellation,
+  useAdminListOrders,
+  useAdminUpdateOrderStatus,
+  useAdminUpdateProduct,
+  useListCategories,
+  useListGrades,
+  useListPublishers,
+  useListStages,
+  useListSubjects,
+} from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useToast } from '@/hooks/use-toast';
+import { type ProductNotice, useProductNotice } from '@/components/storefront/ProductNoticeModal';
+import { useAuth } from '@/contexts/AuthContext';
 
-export function AdminProductForm() { return <div className="p-8">Admin Product Form (TODO)</div>; }
-export function AdminOrders() { return <div className="p-8">Admin Orders (TODO)</div>; }
-export function AdminOrderDetail() { return <div className="p-8">Admin Order Detail (TODO)</div>; }
+const statusLabels: Record<string, string> = {
+  new: 'جديد', awaiting_confirmation: 'بانتظار التأكيد', confirmed: 'مؤكد', preparing: 'جاري التجهيز',
+  ready_for_shipping: 'جاهز للشحن', shipped: 'تم الشحن', out_for_delivery: 'خرج للتوصيل',
+  delivered: 'تم التسليم', delivery_failed: 'تعذر التسليم', returned: 'مرتجع', cancelled: 'ملغي',
+};
+
+export function AdminProductForm() {
+  const { id } = useParams<{ id?: string }>();
+  const productId = id ? Number(id) : 0;
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: product } = useAdminGetProduct(productId, {
+    query: { queryKey: [`/api/admin/products/${productId}`], enabled: productId > 0 },
+  });
+  const [form, setForm] = useState({ nameAr: '', nameEn: '', price: '', oldPrice: '', purchasePrice: '', sku: '', barcode: '', stockQuantity: '0', minStockLevel: '5', status: 'draft', descriptionShort: '', descriptionFull: '', author: '', schoolYear: '', bookType: '', edition: '', educationType: '', stageId: '', gradeId: '', subjectId: '', publisherId: '', categoryId: '', internalNotes: '', freeShipping: false, freeShippingBadgeText: 'شحن مجاني', isFeatured: false, isBestSeller: false, isNew: false, isOffer: false, isRevision: false, isBundle: false, seoTitle: '', seoDescription: '', customerNoticeEnabled: false, customerNoticeTitle: '', customerNoticeMessage: '', customerNoticeButtonText: 'موافق، متابعة الطلب', customerNoticeIcon: '', customerNoticeImageUrl: '', customerNoticeType: 'information', customerNoticeTrigger: 'product_open', customerNoticeStartAt: '', customerNoticeEndAt: '', customerNoticeDismissible: false });
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const { data: stages } = useListStages();
+  const { data: grades } = useListGrades(form.stageId ? { stageId: Number(form.stageId) } : undefined);
+  const { data: subjects } = useListSubjects();
+  const { data: publishers } = useListPublishers();
+  const { data: categories } = useListCategories();
+  const { admin } = useAuth();
+  const canManageNotices = admin?.role === 'owner' || admin?.role === 'administrator' || admin?.permissions?.includes('products.notices.manage');
+  const previewNotice = useProductNotice({ id: productId || -1, nameAr: form.nameAr, customerNoticeEnabled: true, customerNoticeTitle: form.customerNoticeTitle || 'معاينة رسالة العميل', customerNoticeMessage: form.customerNoticeMessage || 'اكتب الرسالة التي ستظهر للعميل.', customerNoticeButtonText: form.customerNoticeButtonText, customerNoticeIcon: form.customerNoticeIcon, customerNoticeImageUrl: form.customerNoticeImageUrl, customerNoticeType: form.customerNoticeType as ProductNotice['customerNoticeType'], customerNoticeTrigger: 'product_open', customerNoticeDismissible: form.customerNoticeDismissible });
+
+  useEffect(() => {
+    if (product) {
+      const noticeProduct = product as typeof product & ProductNotice;
+      setForm({
+      nameAr: product.nameAr, nameEn: product.nameEn || '', price: String(product.price), oldPrice: product.oldPrice ? String(product.oldPrice) : '', purchasePrice: product.purchasePrice ? String(product.purchasePrice) : '', sku: product.sku || '', barcode: product.barcode || '',
+      stockQuantity: String(product.stockQuantity), minStockLevel: String(product.minStockLevel || 5),
+      status: product.status, descriptionShort: product.descriptionShort || '', descriptionFull: product.descriptionFull || '', author: product.author || '', schoolYear: product.schoolYear || '', bookType: product.bookType || '', edition: product.edition || '', educationType: product.educationType || '', stageId: product.stageId ? String(product.stageId) : '', gradeId: product.gradeId ? String(product.gradeId) : '', subjectId: product.subjectId ? String(product.subjectId) : '', publisherId: product.publisherId ? String(product.publisherId) : '', categoryId: product.categoryId ? String(product.categoryId) : '', internalNotes: product.internalNotes || '', freeShipping: product.freeShipping || false, freeShippingBadgeText: product.freeShippingBadgeText || 'شحن مجاني', isFeatured: product.isFeatured || false, isBestSeller: product.isBestSeller || false, isNew: product.isNew || false, isOffer: product.isOffer || false, isRevision: product.isRevision || false, isBundle: product.isBundle || false, seoTitle: product.seoTitle || '', seoDescription: product.seoDescription || '',
+      customerNoticeEnabled: Boolean(noticeProduct.customerNoticeEnabled), customerNoticeTitle: noticeProduct.customerNoticeTitle || '', customerNoticeMessage: noticeProduct.customerNoticeMessage || '', customerNoticeButtonText: noticeProduct.customerNoticeButtonText || 'موافق، متابعة الطلب', customerNoticeIcon: noticeProduct.customerNoticeIcon || '', customerNoticeImageUrl: noticeProduct.customerNoticeImageUrl || '', customerNoticeType: noticeProduct.customerNoticeType || 'information', customerNoticeTrigger: noticeProduct.customerNoticeTrigger || 'product_open', customerNoticeStartAt: noticeProduct.customerNoticeStartAt ? new Date(noticeProduct.customerNoticeStartAt).toISOString().slice(0, 16) : '', customerNoticeEndAt: noticeProduct.customerNoticeEndAt ? new Date(noticeProduct.customerNoticeEndAt).toISOString().slice(0, 16) : '', customerNoticeDismissible: Boolean(noticeProduct.customerNoticeDismissible),
+    }); }
+  }, [product]);
+
+  const uploadImages = async (savedProductId: number) => {
+    if (!imageFiles.length) return;
+    const body = new FormData();
+    imageFiles.forEach(file => body.append('images', file));
+    const response = await fetch(`/api/admin/products/${savedProductId}/images`, { method: 'POST', credentials: 'include', body });
+    if (!response.ok) throw new Error('تعذر رفع الصور');
+  };
+
+  const done = async (saved: { id: number }) => {
+    await uploadImages(saved.id);
+    queryClient.invalidateQueries({ queryKey: ['/api/admin/products'] });
+    toast({ title: productId ? 'تم تحديث المنتج' : 'تمت إضافة المنتج' });
+    navigate('/admin/products');
+  };
+  const failed = () => toast({ title: 'تعذر حفظ المنتج', description: 'راجع البيانات وحاول مرة أخرى', variant: 'destructive' });
+  const create = useAdminCreateProduct({ mutation: { onSuccess: saved => void done(saved), onError: failed } });
+  const update = useAdminUpdateProduct({ mutation: { onSuccess: saved => void done(saved), onError: failed } });
+
+  const submit = (event: FormEvent): void => {
+    event.preventDefault();
+    if (!form.nameAr.trim() || Number(form.price) <= 0) {
+      failed();
+      return;
+    }
+    const data = {
+      nameAr: form.nameAr.trim(), nameEn: form.nameEn || undefined, price: Number(form.price), oldPrice: Number(form.oldPrice) || undefined, sku: form.sku || `MK-${Date.now()}`, barcode: form.barcode || undefined,
+      status: form.status as AdminProductInputStatus, minStockLevel: Number(form.minStockLevel),
+      descriptionShort: form.descriptionShort || undefined, descriptionFull: form.descriptionFull || undefined,
+      schoolYear: form.schoolYear || undefined, bookType: form.bookType || undefined,
+      isFeatured: form.isFeatured, isBestSeller: form.isBestSeller, isNew: form.isNew,
+      internalNotes: form.internalNotes || undefined,
+      purchasePrice: Number(form.purchasePrice) || undefined, author: form.author || undefined,
+      stageId: Number(form.stageId) || undefined, gradeId: Number(form.gradeId) || undefined,
+      subjectId: Number(form.subjectId) || undefined, publisherId: Number(form.publisherId) || undefined,
+      categoryId: Number(form.categoryId) || undefined, educationType: form.educationType || undefined,
+      edition: form.edition || undefined,
+      isOffer: form.isOffer, isRevision: form.isRevision, isBundle: form.isBundle,
+      freeShipping: form.freeShipping, freeShippingBadgeText: form.freeShipping ? form.freeShippingBadgeText : undefined,
+      seoTitle: form.seoTitle || undefined, seoDescription: form.seoDescription || undefined,
+      ...(canManageNotices ? { customerNoticeEnabled: form.customerNoticeEnabled, customerNoticeTitle: form.customerNoticeTitle || undefined, customerNoticeMessage: form.customerNoticeMessage || undefined, customerNoticeButtonText: form.customerNoticeButtonText || undefined, customerNoticeIcon: form.customerNoticeIcon || null, customerNoticeImageUrl: form.customerNoticeImageUrl || null, customerNoticeType: form.customerNoticeType, customerNoticeTrigger: form.customerNoticeTrigger, customerNoticeStartAt: form.customerNoticeStartAt ? new Date(form.customerNoticeStartAt).toISOString() : null, customerNoticeEndAt: form.customerNoticeEndAt ? new Date(form.customerNoticeEndAt).toISOString() : null, customerNoticeDismissible: form.customerNoticeDismissible } : {}),
+    };
+    if (productId) update.mutate({ id: productId, data: data as Parameters<typeof update.mutate>[0]['data'] });
+    else create.mutate({ data: { ...data, stockQuantity: Number(form.stockQuantity) } as Parameters<typeof create.mutate>[0]['data'] });
+  };
+
+  return <form onSubmit={submit} className="max-w-4xl space-y-6" dir="rtl">
+    <div className="flex items-center justify-between"><h1 className="text-2xl font-bold">{productId ? 'تعديل المنتج' : 'إضافة منتج'}</h1><Button variant="outline" asChild><Link href="/admin/products">رجوع</Link></Button></div>
+    <Card><CardHeader><CardTitle>1. المعلومات الأساسية</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <label className="space-y-2"><span>الاسم العربي *</span><Input value={form.nameAr} onChange={e => setForm(v => ({ ...v, nameAr: e.target.value }))} /></label>
+      <label className="space-y-2"><span>الاسم الإنجليزي</span><Input dir="ltr" value={form.nameEn} onChange={e => setForm(v => ({ ...v, nameEn: e.target.value }))} /></label>
+      <label className="space-y-2"><span>SKU (يُولد تلقائيًا إذا تُرك فارغًا)</span><Input dir="ltr" value={form.sku} onChange={e => setForm(v => ({ ...v, sku: e.target.value }))} /></label>
+      <label className="space-y-2"><span>الباركود</span><Input dir="ltr" value={form.barcode} onChange={e => setForm(v => ({ ...v, barcode: e.target.value }))} /></label>
+      <label className="space-y-2 md:col-span-2"><span>وصف مختصر</span><Textarea value={form.descriptionShort} onChange={e => setForm(v => ({ ...v, descriptionShort: e.target.value }))} /></label>
+      <label className="space-y-2 md:col-span-2"><span>الوصف الكامل</span><Textarea rows={6} value={form.descriptionFull} onChange={e => setForm(v => ({ ...v, descriptionFull: e.target.value }))} /></label>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>2. التصنيف والأسعار</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <AdminProductSelect label="المرحلة الدراسية" value={form.stageId} items={stages} onChange={stageId => setForm(v => ({ ...v, stageId, gradeId: '' }))} />
+      <AdminProductSelect label="الصف الدراسي" value={form.gradeId} items={grades} onChange={gradeId => setForm(v => ({ ...v, gradeId }))} />
+      <AdminProductSelect label="المادة" value={form.subjectId} items={subjects} onChange={subjectId => setForm(v => ({ ...v, subjectId }))} />
+      <AdminProductSelect label="دار النشر" value={form.publisherId} items={publishers} onChange={publisherId => setForm(v => ({ ...v, publisherId }))} />
+      <AdminProductSelect label="التصنيف" value={form.categoryId} items={categories} onChange={categoryId => setForm(v => ({ ...v, categoryId }))} />
+      <label className="space-y-2"><span>نوع التعليم</span><Select value={form.educationType || 'none'} onValueChange={educationType => setForm(v => ({ ...v, educationType: educationType === 'none' ? '' : educationType }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">غير محدد</SelectItem><SelectItem value="عربي">عربي</SelectItem><SelectItem value="لغات">لغات</SelectItem><SelectItem value="أزهر">أزهر</SelectItem></SelectContent></Select></label>
+      <label className="space-y-2"><span>السعر بالجنيه *</span><Input type="number" min="0.01" step="0.01" value={form.price} onChange={e => setForm(v => ({ ...v, price: e.target.value }))} /></label>
+      <label className="space-y-2"><span>السعر القديم</span><Input type="number" min="0" value={form.oldPrice} onChange={e => setForm(v => ({ ...v, oldPrice: e.target.value }))} /></label>
+      <label className="space-y-2"><span>سعر الشراء</span><Input type="number" min="0" value={form.purchasePrice} onChange={e => setForm(v => ({ ...v, purchasePrice: e.target.value }))} /></label>
+      <label className="space-y-2"><span>المؤلف أو المدرس</span><Input value={form.author} onChange={e => setForm(v => ({ ...v, author: e.target.value }))} /></label>
+      <label className="space-y-2"><span>السنة الدراسية</span><Input value={form.schoolYear} onChange={e => setForm(v => ({ ...v, schoolYear: e.target.value }))} /></label>
+      <label className="space-y-2"><span>نوع الكتاب</span><Input value={form.bookType} onChange={e => setForm(v => ({ ...v, bookType: e.target.value }))} /></label>
+      <label className="space-y-2"><span>الطبعة</span><Input value={form.edition} onChange={e => setForm(v => ({ ...v, edition: e.target.value }))} /></label>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>3. المخزون والنشر</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      {!productId && <label className="space-y-2"><span>المخزون الافتتاحي</span><Input type="number" min="0" value={form.stockQuantity} onChange={e => setForm(v => ({ ...v, stockQuantity: e.target.value }))} /></label>}
+      <label className="space-y-2"><span>حد تنبيه المخزون</span><Input type="number" min="0" value={form.minStockLevel} onChange={e => setForm(v => ({ ...v, minStockLevel: e.target.value }))} /></label>
+      <label className="space-y-2"><span>الحالة</span><Select value={form.status} onValueChange={status => setForm(v => ({ ...v, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">مسودة</SelectItem><SelectItem value="active">نشط</SelectItem><SelectItem value="archived">مؤرشف</SelectItem></SelectContent></Select></label>
+      <div className="md:col-span-2 flex flex-wrap gap-5">{[['isFeatured','منتج مميز'],['isBestSeller','الأكثر مبيعًا'],['isNew','منتج جديد'],['isOffer','عرض'],['isRevision','كتاب مراجعة'],['isBundle','باقة كتب']].map(([key,label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={Boolean(form[key as keyof typeof form])} onChange={e => setForm(v => ({ ...v, [key]: e.target.checked }))}/>{label}</label>)}</div>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>4. الصور</CardTitle></CardHeader><CardContent className="space-y-4">
+      <Input type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={e => setImageFiles(Array.from(e.target.files || []))} />
+      <p className="text-xs text-muted-foreground">حتى 10 صور، 8MB للصورة. تُحوّل تلقائيًا إلى WebP.</p>
+      <div className="flex flex-wrap gap-3">{imageFiles.map(file => <div key={`${file.name}-${file.size}`} className="w-24"><img src={URL.createObjectURL(file)} alt={file.name} className="h-24 w-24 rounded object-cover"/><p className="truncate text-xs">{file.name}</p></div>)}</div>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>5. الشحن المجاني</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <label className="flex items-center gap-2"><input type="checkbox" checked={form.freeShipping} onChange={e => setForm(v => ({ ...v, freeShipping: e.target.checked }))}/>هذا المنتج يشمل شحنًا مجانيًا</label>
+      <label className="space-y-2"><span>نص الشارة</span><Input disabled={!form.freeShipping} value={form.freeShippingBadgeText} onChange={e => setForm(v => ({ ...v, freeShippingBadgeText: e.target.value }))}/></label>
+    </CardContent></Card>
+    {canManageNotices && <Card><CardHeader><CardTitle>6. رسالة تنبيه العميل</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <label className="flex items-center gap-2 md:col-span-2"><input type="checkbox" checked={form.customerNoticeEnabled} onChange={e => setForm(v => ({ ...v, customerNoticeEnabled: e.target.checked }))}/>تفعيل الرسالة لهذا المنتج</label>
+      <label className="space-y-2"><span>نوع الرسالة</span><Select value={form.customerNoticeType} onValueChange={customerNoticeType => setForm(v => ({ ...v, customerNoticeType }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="information">معلومة</SelectItem><SelectItem value="warning">تحذير</SelectItem><SelectItem value="preorder">حجز مسبق</SelectItem><SelectItem value="delayed_delivery">توصيل متأخر</SelectItem><SelectItem value="custom">مخصصة</SelectItem></SelectContent></Select></label>
+      <label className="space-y-2"><span>موعد الظهور</span><Select value={form.customerNoticeTrigger} onValueChange={customerNoticeTrigger => setForm(v => ({ ...v, customerNoticeTrigger }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="product_open">عند فتح صفحة المنتج</SelectItem><SelectItem value="add_to_cart">قبل الإضافة للسلة</SelectItem><SelectItem value="buy_now">قبل الشراء الآن</SelectItem><SelectItem value="checkout">عند إتمام الطلب</SelectItem><SelectItem value="first_interaction">أول تفاعل فقط</SelectItem></SelectContent></Select></label>
+      <label className="space-y-2 md:col-span-2"><span>العنوان</span><Input value={form.customerNoticeTitle} onChange={e => setForm(v => ({ ...v, customerNoticeTitle: e.target.value }))}/></label>
+      <label className="space-y-2 md:col-span-2"><span>الرسالة</span><Textarea rows={5} value={form.customerNoticeMessage} onChange={e => setForm(v => ({ ...v, customerNoticeMessage: e.target.value }))}/></label>
+      <label className="space-y-2"><span>نص زر التأكيد</span><Input value={form.customerNoticeButtonText} onChange={e => setForm(v => ({ ...v, customerNoticeButtonText: e.target.value }))}/></label>
+      <label className="space-y-2"><span>الأيقونة المخصصة</span><Select value={form.customerNoticeIcon || 'none'} onValueChange={customerNoticeIcon => setForm(v => ({ ...v, customerNoticeIcon: customerNoticeIcon === 'none' ? '' : customerNoticeIcon }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">صورة المنتج / تلقائي</SelectItem><SelectItem value="info">معلومة</SelectItem><SelectItem value="warning">تحذير</SelectItem><SelectItem value="package">طرد</SelectItem><SelectItem value="clock">موعد</SelectItem><SelectItem value="book">كتاب</SelectItem><SelectItem value="truck">شحن</SelectItem></SelectContent></Select></label>
+      <label className="space-y-2 md:col-span-2"><span>رابط صورة مخصصة للرسالة (اختياري)</span><Input dir="ltr" type="url" value={form.customerNoticeImageUrl} onChange={e => setForm(v => ({ ...v, customerNoticeImageUrl: e.target.value }))} placeholder="https://..." /></label>
+      <label className="flex items-center gap-2 self-end pb-3"><input type="checkbox" checked={form.customerNoticeDismissible} onChange={e => setForm(v => ({ ...v, customerNoticeDismissible: e.target.checked }))}/>السماح بالإغلاق دون متابعة</label>
+      <label className="space-y-2"><span>تاريخ البداية (اختياري)</span><Input type="datetime-local" value={form.customerNoticeStartAt} onChange={e => setForm(v => ({ ...v, customerNoticeStartAt: e.target.value }))}/></label>
+      <label className="space-y-2"><span>تاريخ النهاية (اختياري)</span><Input type="datetime-local" value={form.customerNoticeEndAt} onChange={e => setForm(v => ({ ...v, customerNoticeEndAt: e.target.value }))}/></label>
+      <Button type="button" variant="outline" onClick={() => previewNotice.request('product_open')} className="md:col-span-2">معاينة الرسالة</Button>
+    </CardContent>{previewNotice.modal}</Card>}
+    <Card><CardHeader><CardTitle>7. SEO والملاحظات الداخلية</CardTitle></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+      <label className="space-y-2"><span>عنوان SEO</span><Input value={form.seoTitle} onChange={e => setForm(v => ({ ...v, seoTitle: e.target.value }))}/></label>
+      <label className="space-y-2"><span>وصف SEO</span><Input value={form.seoDescription} onChange={e => setForm(v => ({ ...v, seoDescription: e.target.value }))}/></label>
+      <label className="space-y-2 md:col-span-2"><span>ملاحظات داخلية</span><Textarea value={form.internalNotes} onChange={e => setForm(v => ({ ...v, internalNotes: e.target.value }))}/></label>
+    </CardContent></Card>
+    <div className="flex gap-3"><Button type="submit" disabled={create.isPending || update.isPending}>{create.isPending || update.isPending ? 'جاري الحفظ...' : form.status === 'draft' ? 'حفظ كمسودة' : 'حفظ ونشر'}</Button><Button type="button" variant="outline" onClick={() => navigate('/admin/products')}>إلغاء</Button></div>
+  </form>;
+}
+
+function AdminProductSelect({ label, value, items, onChange }: { label: string; value: string; items?: { id: number; nameAr: string }[]; onChange: (value: string) => void }) {
+  return <label className="space-y-2"><span>{label}</span><Select value={value || 'none'} onValueChange={next => onChange(next === 'none' ? '' : next)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">غير محدد</SelectItem>{items?.map(item => <SelectItem key={item.id} value={String(item.id)}>{item.nameAr}</SelectItem>)}</SelectContent></Select></label>;
+}
+
+export function AdminOrders() {
+  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState('all');
+  const [query, setQuery] = useState('');
+  const { data, isLoading } = useAdminListOrders({ page, limit: 20, q: query || undefined, status: status === 'all' ? undefined : status });
+  return <div className="space-y-6" dir="rtl">
+    <div className="flex flex-wrap items-center justify-between gap-4"><h1 className="text-2xl font-bold">إدارة الطلبات</h1><div className="flex flex-wrap gap-2"><Input className="w-72" placeholder="رقم الطلب أو العميل أو الهاتف" value={query} onChange={event => setQuery(event.target.value)} /><Select value={status} onValueChange={setStatus}><SelectTrigger className="w-52"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">كل الحالات</SelectItem>{Object.entries(statusLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div></div>
+    <Card><Table><TableHeader><TableRow><TableHead>رقم الطلب</TableHead><TableHead>العميل</TableHead><TableHead>المحافظة</TableHead><TableHead>الإجمالي</TableHead><TableHead>الحالة</TableHead><TableHead>التاريخ</TableHead></TableRow></TableHeader><TableBody>
+      {isLoading ? <TableRow><TableCell colSpan={6} className="text-center py-12">جاري التحميل...</TableCell></TableRow> : data?.items.map(order => <TableRow key={order.id} className="cursor-pointer"><TableCell><Link className="font-mono font-bold text-primary" href={`/admin/orders/${order.id}`}>{order.orderNumber}</Link></TableCell><TableCell>{order.customerName}<div className="text-xs text-muted-foreground" dir="ltr">{order.mobile}</div></TableCell><TableCell>{order.governorate}</TableCell><TableCell>{order.total.toFixed(2)} ج.م</TableCell><TableCell><Badge variant="outline">{statusLabels[order.status] || order.status}</Badge></TableCell><TableCell>{new Date(order.createdAt).toLocaleDateString('ar-EG')}</TableCell></TableRow>)}
+      {!isLoading && !data?.items.length && <TableRow><TableCell colSpan={6} className="text-center py-12">لا توجد طلبات</TableCell></TableRow>}
+    </TableBody></Table></Card>
+    {data && data.total > data.limit && <div className="flex justify-between"><Button variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>السابق</Button><span>صفحة {page}</span><Button variant="outline" disabled={page * data.limit >= data.total} onClick={() => setPage(p => p + 1)}>التالي</Button></div>}
+  </div>;
+}
+
+export function AdminOrderDetail() {
+  const { id } = useParams<{ id: string }>();
+  const orderId = Number(id);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: order, isLoading } = useAdminGetOrder(orderId, { query: { queryKey: [`/api/admin/orders/${orderId}`], enabled: orderId > 0 } });
+  const [status, setStatus] = useState('');
+  const refresh = () => queryClient.invalidateQueries({ queryKey: [`/api/admin/orders/${orderId}`] });
+  const statusMutation = useAdminUpdateOrderStatus({ mutation: { onSuccess: () => { refresh(); toast({ title: 'تم تحديث حالة الطلب' }); }, onError: () => toast({ title: 'تعذر تحديث الطلب', variant: 'destructive' }) } });
+  const cancellation = useAdminHandleCancellation({ mutation: { onSuccess: () => { refresh(); toast({ title: 'تم تسجيل قرار طلب الإلغاء' }); }, onError: () => toast({ title: 'لا يوجد طلب إلغاء قيد المراجعة', variant: 'destructive' }) } });
+  if (isLoading || !order) return <div className="py-16 text-center">جاري تحميل الطلب...</div>;
+  return <div className="space-y-6" dir="rtl">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">الطلب {order.orderNumber}</h1><p className="text-muted-foreground">{new Date(order.createdAt).toLocaleString('ar-EG')}</p></div><div className="flex gap-2 print:hidden"><Button variant="outline" onClick={() => window.print()}>طباعة الفاتورة</Button><Button variant="outline" asChild><a href={`https://wa.me/2${order.mobile?.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">واتساب</a></Button><Button variant="outline" asChild><Link href="/admin/orders">كل الطلبات</Link></Button></div></div>
+    <div className="grid gap-6 lg:grid-cols-3"><Card className="lg:col-span-2"><CardHeader><CardTitle>المنتجات</CardTitle></CardHeader><CardContent className="space-y-3">{order.items.map((item, index) => <div key={`${item.productId}-${index}`} className="flex justify-between border-b pb-3"><span>{item.nameAr} × {item.quantity}</span><strong>{item.subtotal.toFixed(2)} ج.م</strong></div>)}<div className="flex justify-between text-lg pt-2"><span>الإجمالي</span><strong>{order.total.toFixed(2)} ج.م</strong></div></CardContent></Card>
+      <Card><CardHeader><CardTitle>بيانات العميل والشحن</CardTitle></CardHeader><CardContent className="space-y-2"><p className="font-bold">{order.customerName}</p><p dir="ltr" className="text-right">{order.mobile}</p><p>{order.governorate}، {order.city}</p><p>{order.detailedAddress}</p><p className="text-sm text-muted-foreground">الدفع عند الاستلام</p><hr/><p>تكلفة الشحن: <strong>{order.shippingCost || 0} ج.م</strong></p><p>خصم الكوبون: {order.couponDiscount || 0} ج.م</p></CardContent></Card></div>
+    <Card><CardHeader><CardTitle>تحديث الحالة</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-3"><Select value={status || order.status} onValueChange={setStatus}><SelectTrigger className="w-60"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(statusLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><Button onClick={() => statusMutation.mutate({ id: orderId, data: { status: status || order.status } })} disabled={statusMutation.isPending}>حفظ الحالة</Button><div className="ms-auto flex gap-2"><Button variant="outline" onClick={() => cancellation.mutate({ id: orderId, data: { decision: 'rejected' } })}>رفض طلب الإلغاء</Button><Button variant="destructive" onClick={() => cancellation.mutate({ id: orderId, data: { decision: 'approved' } })}>الموافقة على الإلغاء</Button></div></CardContent></Card>
+    <Card><CardHeader><CardTitle>سجل الحالة</CardTitle></CardHeader><CardContent className="space-y-3">{order.statusHistory?.map((entry, index) => <div key={index} className="border-r-2 border-primary pr-4"><strong>{statusLabels[entry.status] || entry.status}</strong><p className="text-sm text-muted-foreground">{entry.notes} — {new Date(entry.createdAt).toLocaleString('ar-EG')}</p></div>)}</CardContent></Card>
+  </div>;
+}

@@ -11,8 +11,12 @@ import type { OrderInputPaymentMethod } from './orderInputPaymentMethod';
 export interface OrderInput {
   customerName: string;
   mobile: string;
+  primaryPhoneHasWhatsApp?: boolean;
   /** @nullable */
   altMobile?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   governorateId: number;
   city: string;
   detailedAddress: string;
@@ -25,5 +29,10 @@ export interface OrderInput {
   paymentMethod: OrderInputPaymentMethod;
   /** @nullable */
   couponCode?: string | null;
+  /**
+     * @minLength 12
+     * @maxLength 100
+     */
+  checkoutToken?: string;
   cartItems?: CartItemInput[];
 }

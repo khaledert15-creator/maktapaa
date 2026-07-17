@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db, bannersTable, faqsTable, siteSettingsTable, stagesTable, publishersTable, productsTable } from "@workspace/db";
-import { eq, asc, and, desc, isNull } from "drizzle-orm";
+import { db, bannersTable, brandAssetsTable, faqsTable, helpLinksTable, helpSectionsTable, siteSettingsTable, stagesTable, gradesTable, subjectsTable, publishersTable, categoriesTable, productsTable } from "@workspace/db";
+import { and, eq, asc, inArray, sql, isNull, lte, gte, or } from "drizzle-orm";
+import { enrichProductSummaries } from "../services/catalog";
 
 const router: IRouter = Router();
 
@@ -9,11 +10,25 @@ async function getSettings(): Promise<Record<string, string>> {
   return Object.fromEntries(rows.map(r => [r.key, r.value || ""]));
 }
 
-function mapSettings(settings: Record<string, string>) {
+type BrandAsset = typeof brandAssetsTable.$inferSelect;
+
+function mapSettings(settings: Record<string, string>, assets: BrandAsset[] = []) {
+  const now = Date.now();
+  const startAt = settings.announcementStartAt ? Date.parse(settings.announcementStartAt) : null;
+  const endAt = settings.announcementEndAt ? Date.parse(settings.announcementEndAt) : null;
+  const announcementInSchedule = (startAt === null || Number.isNaN(startAt) || startAt <= now) && (endAt === null || Number.isNaN(endAt) || endAt >= now);
+  const logos = Object.fromEntries(assets.map(asset => [asset.kind, asset.url]));
   return {
     storeName: settings.storeName || "Maktaba Dot Com",
     storeNameAr: settings.storeNameAr || "مكتبة دوت كوم",
-    logoUrl: settings.logoUrl || null,
+    logoUrl: logos.main || null,
+    mainLogoUrl: logos.main || null,
+    darkBackgroundLogoUrl: logos.dark_background || logos.main || null,
+    lightBackgroundLogoUrl: logos.light_background || logos.main || null,
+    mobileLogoUrl: logos.mobile || logos.main || null,
+    faviconUrl: logos.favicon || null,
+    adminLogoUrl: logos.admin || logos.main || null,
+    socialImageUrl: logos.social || null,
     whatsappNumber: settings.whatsappNumber || null,
     phoneNumber: settings.phoneNumber || null,
     email: settings.email || null,
@@ -23,20 +38,48 @@ function mapSettings(settings: Record<string, string>) {
     tiktokUrl: settings.tiktokUrl || null,
     telegramUrl: settings.telegramUrl || null,
     announcementBar: settings.announcementBar || null,
-    announcementEnabled: settings.announcementEnabled === "true",
+    announcementEnabled: settings.announcementEnabled === "true" && announcementInSchedule,
+    announcementLink: settings.announcementLink || null,
+    announcementStartAt: settings.announcementStartAt || null,
+    announcementEndAt: settings.announcementEndAt || null,
     seoTitle: settings.seoTitle || null,
     seoDescription: settings.seoDescription || null,
   };
 }
 
+const activeBannersWhere = () => {
+  const now = new Date();
+  return and(
+    eq(bannersTable.isActive, true),
+    or(isNull(bannersTable.startAt), lte(bannersTable.startAt, now)),
+    or(isNull(bannersTable.endAt), gte(bannersTable.endAt, now)),
+  );
+};
+
 router.get("/content/settings", async (_req, res): Promise<void> => {
-  const settings = await getSettings();
-  res.json(mapSettings(settings));
+  res.setHeader("Cache-Control", "no-store");
+  const [settings, assets] = await Promise.all([getSettings(), db.select().from(brandAssetsTable)]);
+  res.json(mapSettings(settings, assets));
+});
+
+router.get("/content/help", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
+  const [section] = await db.select().from(helpSectionsTable).orderBy(asc(helpSectionsTable.id)).limit(1);
+  if (!section || !section.isActive) { res.json({ id: section?.id ?? null, titleAr: section?.titleAr ?? "", isActive: false, items: [] }); return; }
+  const now = new Date();
+  const items = await db.select().from(helpLinksTable).where(and(
+    eq(helpLinksTable.sectionId, section.id),
+    eq(helpLinksTable.isActive, true),
+    or(isNull(helpLinksTable.startAt), lte(helpLinksTable.startAt, now)),
+    or(isNull(helpLinksTable.endAt), gte(helpLinksTable.endAt, now)),
+  )).orderBy(asc(helpLinksTable.sortOrder), asc(helpLinksTable.id));
+  res.json({ id: section.id, titleAr: section.titleAr, isActive: section.isActive, items });
 });
 
 router.get("/content/banners", async (_req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
   const banners = await db.select().from(bannersTable)
-    .where(eq(bannersTable.isActive, true))
+    .where(activeBannersWhere())
     .orderBy(asc(bannersTable.sortOrder));
   res.json(banners);
 });
@@ -49,32 +92,55 @@ router.get("/content/faqs", async (_req, res): Promise<void> => {
 });
 
 router.get("/content/homepage", async (_req, res): Promise<void> => {
-  const [banners, stages, publishers, featuredProducts, bestSellers, newArrivals, revisionBooks, settings] = await Promise.all([
-    db.select().from(bannersTable).where(eq(bannersTable.isActive, true)).orderBy(asc(bannersTable.sortOrder)),
+  res.setHeader("Cache-Control", "no-store");
+  const [banners, stages, grades, subjects, publishers, categories, productSections, settings, brandAssets] = await Promise.all([
+    db.select().from(bannersTable).where(activeBannersWhere()).orderBy(asc(bannersTable.sortOrder)),
     db.select().from(stagesTable).where(eq(stagesTable.isActive, true)).orderBy(asc(stagesTable.sortOrder)),
-    db.select().from(publishersTable).where(eq(publishersTable.isActive, true)),
-    db.select().from(productsTable).where(and(eq(productsTable.isFeatured, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).limit(8),
-    db.select().from(productsTable).where(and(eq(productsTable.isBestSeller, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.salesCount)).limit(12),
-    db.select().from(productsTable).where(and(eq(productsTable.isNew, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).orderBy(desc(productsTable.createdAt)).limit(8),
-    db.select().from(productsTable).where(and(eq(productsTable.isRevision, true), eq(productsTable.status, "active"), isNull(productsTable.deletedAt))).limit(8),
+    db.select().from(gradesTable).where(eq(gradesTable.isActive, true)).orderBy(asc(gradesTable.sortOrder)),
+    db.select().from(subjectsTable).where(eq(subjectsTable.isActive, true)).orderBy(asc(subjectsTable.nameAr)),
+    db.select().from(publishersTable).where(eq(publishersTable.isActive, true)).orderBy(asc(publishersTable.nameAr)),
+    db.select().from(categoriesTable).where(eq(categoriesTable.isActive, true)).orderBy(asc(categoriesTable.sortOrder)),
+    db.execute<{ section: string; id: number }>(sql`
+      (select 'featured'::text as section, id from products where is_featured = true and status = 'active' and deleted_at is null order by sort_order desc limit 8)
+      union all (select 'best'::text, id from products where is_best_seller = true and status = 'active' and deleted_at is null order by sales_count desc limit 12)
+      union all (select 'new'::text, id from products where is_new = true and status = 'active' and deleted_at is null order by created_at desc limit 8)
+      union all (select 'revision'::text, id from products where is_revision = true and status = 'active' and deleted_at is null order by sort_order desc limit 8)
+      union all (select 'offers'::text, id from products where (is_offer = true or old_price > price) and status = 'active' and deleted_at is null order by updated_at desc limit 8)
+      union all (select 'bundles'::text, id from products where is_bundle = true and status = 'active' and deleted_at is null order by updated_at desc limit 8)
+      union all (select 'free_shipping'::text, id from products where free_shipping = true and status = 'active' and deleted_at is null order by updated_at desc limit 8)
+      union all (select 'recommended'::text, id from products where status = 'active' and deleted_at is null order by sort_order desc, sales_count desc, updated_at desc limit 8)
+    `),
     getSettings(),
+    db.select().from(brandAssetsTable),
   ]);
 
-  const toSummary = (p: typeof productsTable.$inferSelect) => ({
-    id: p.id, nameAr: p.nameAr, nameEn: p.nameEn, slug: p.slug, coverImage: p.coverImage,
-    price: Number(p.price), oldPrice: p.oldPrice ? Number(p.oldPrice) : null,
-    discountPercent: p.oldPrice && Number(p.oldPrice) > 0 ? Math.round((1 - Number(p.price) / Number(p.oldPrice)) * 100) : null,
-    inStock: p.stockQuantity > 0, isBestSeller: p.isBestSeller, isNew: p.isNew, isFeatured: p.isFeatured,
-    publisher: null, grade: null, subject: null,
+  const sectionIds = productSections.rows.map(row => Number(row.id));
+  const allProducts = sectionIds.length ? await db.select().from(productsTable).where(inArray(productsTable.id, [...new Set(sectionIds)])) : [];
+  const enrichedProducts = await enrichProductSummaries(allProducts);
+  const enrichedMap = new Map(enrichedProducts.map(product => [product.id, product]));
+  const select = (section: string) => productSections.rows.filter(row => row.section === section).flatMap(row => {
+    const product = enrichedMap.get(Number(row.id)); return product ? [product] : [];
   });
+  const featured = select("featured");
+  const best = select("best");
+  const latest = select("new");
+  const revision = select("revision");
+  const offerProducts = select("offers");
+  const productBundles = select("bundles");
+  const freeShipping = select("free_shipping");
+  const recommended = select("recommended");
 
   res.json({
-    banners, stages, publishers,
-    featuredProducts: featuredProducts.map(toSummary),
-    bestSellers: bestSellers.map(toSummary),
-    newArrivals: newArrivals.map(toSummary),
-    revisionBooks: revisionBooks.map(toSummary),
-    settings: mapSettings(settings),
+    banners, stages, grades, subjects, publishers, categories,
+    featuredProducts: featured,
+    bestSellers: best,
+    newArrivals: latest,
+    revisionBooks: revision,
+    offers: offerProducts,
+    bundles: productBundles,
+    freeShippingProducts: freeShipping,
+    recommendedProducts: recommended,
+    settings: mapSettings(settings, brandAssets),
   });
 });
 

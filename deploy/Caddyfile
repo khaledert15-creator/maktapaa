@@ -1,0 +1,46 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+www.maktabaa.com {
+	redir https://maktabaa.com{uri} permanent
+}
+
+maktabaa.com {
+	encode zstd gzip
+	request_body {
+		max_size 12MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://*.sentry.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:5001
+	}
+
+	@seo path / /product/* /category/* /publisher/* /sitemap.xml /robots.txt
+	handle @seo {
+		reverse_proxy api:5001
+	}
+
+	handle {
+		reverse_proxy storefront:8080
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

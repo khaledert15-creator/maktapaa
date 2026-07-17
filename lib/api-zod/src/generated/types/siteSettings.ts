@@ -12,6 +12,20 @@ export interface SiteSettings {
   /** @nullable */
   logoUrl?: string | null;
   /** @nullable */
+  mainLogoUrl?: string | null;
+  /** @nullable */
+  darkBackgroundLogoUrl?: string | null;
+  /** @nullable */
+  lightBackgroundLogoUrl?: string | null;
+  /** @nullable */
+  mobileLogoUrl?: string | null;
+  /** @nullable */
+  faviconUrl?: string | null;
+  /** @nullable */
+  adminLogoUrl?: string | null;
+  /** @nullable */
+  socialImageUrl?: string | null;
+  /** @nullable */
   whatsappNumber?: string | null;
   /** @nullable */
   phoneNumber?: string | null;
@@ -30,6 +44,12 @@ export interface SiteSettings {
   /** @nullable */
   announcementBar?: string | null;
   announcementEnabled?: boolean;
+  /** @nullable */
+  announcementLink?: string | null;
+  /** @nullable */
+  announcementStartAt?: Date | null;
+  /** @nullable */
+  announcementEndAt?: Date | null;
   /** @nullable */
   seoTitle?: string | null;
   /** @nullable */

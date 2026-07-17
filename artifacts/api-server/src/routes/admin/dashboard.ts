@@ -1,12 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, productsTable, customersTable } from "@workspace/db";
-import { eq, gte, sql, and, lte } from "drizzle-orm";
-import { requireAdminAuth } from "../../lib/auth";
+import { eq, gte, sql, and } from "drizzle-orm";
+import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
 
-router.get("/admin/dashboard/summary", async (_req, res): Promise<void> => {
+router.get("/admin/dashboard/summary", requireAdminPermission("dashboard.view"), async (_req, res): Promise<void> => {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekStart = new Date(now);
@@ -47,7 +47,7 @@ router.get("/admin/dashboard/summary", async (_req, res): Promise<void> => {
   });
 });
 
-router.get("/admin/dashboard/sales-chart", async (req, res): Promise<void> => {
+router.get("/admin/dashboard/sales-chart", requireAdminPermission("dashboard.view"), async (req, res): Promise<void> => {
   const { period = "30d" } = req.query as { period: string };
   const days = period === "7d" ? 7 : period === "90d" ? 90 : period === "365d" ? 365 : 30;
   const start = new Date();
@@ -65,7 +65,7 @@ router.get("/admin/dashboard/sales-chart", async (req, res): Promise<void> => {
   res.json(rows.map(r => ({ date: r.date, amount: Number(r.amount), orderCount: r.orderCount })));
 });
 
-router.get("/admin/dashboard/recent-orders", async (_req, res): Promise<void> => {
+router.get("/admin/dashboard/recent-orders", requireAdminPermission("dashboard.view"), async (_req, res): Promise<void> => {
   const orders = await db.select().from(ordersTable).orderBy(sql`created_at desc`).limit(10);
   res.json(orders.map(o => ({
     id: o.id, orderNumber: o.orderNumber, customerName: o.customerName, mobile: o.mobile,
@@ -74,7 +74,7 @@ router.get("/admin/dashboard/recent-orders", async (_req, res): Promise<void> =>
   })));
 });
 
-router.get("/admin/dashboard/top-products", async (_req, res): Promise<void> => {
+router.get("/admin/dashboard/top-products", requireAdminPermission("dashboard.view"), async (_req, res): Promise<void> => {
   const products = await db.select({
     productId: productsTable.id, nameAr: productsTable.nameAr, coverImage: productsTable.coverImage,
     soldCount: productsTable.salesCount,
@@ -87,7 +87,7 @@ router.get("/admin/dashboard/top-products", async (_req, res): Promise<void> => 
   res.json(products.map(p => ({ ...p, revenue: Number(p.revenue) })));
 });
 
-router.get("/admin/dashboard/low-stock", async (_req, res): Promise<void> => {
+router.get("/admin/dashboard/low-stock", requireAdminPermission("dashboard.view"), async (_req, res): Promise<void> => {
   const products = await db.select({
     productId: productsTable.id, nameAr: productsTable.nameAr, sku: productsTable.sku,
     stockQuantity: productsTable.stockQuantity, minStockLevel: productsTable.minStockLevel,

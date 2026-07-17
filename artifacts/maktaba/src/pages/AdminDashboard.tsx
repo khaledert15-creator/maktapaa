@@ -18,8 +18,6 @@ import {
   ShoppingCart, 
   PackageX, 
   TrendingUp, 
-  Users, 
-  Clock, 
   AlertTriangle,
   ArrowUpRight
 } from "lucide-react";

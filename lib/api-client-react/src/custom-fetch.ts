@@ -327,7 +327,10 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  // The generated client consumes JSON API contracts. Defaulting to `auto`
+  // allowed Vite's HTML SPA fallback to masquerade as successful API data
+  // whenever the backend was unavailable, which then crashed React pages.
+  const { responseType = "json", headers: headersInit, ...init } = options;
 
   const method = resolveMethod(input, init.method);
 

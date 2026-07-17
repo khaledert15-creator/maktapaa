@@ -24,6 +24,8 @@ export interface AdminProduct {
   /** @nullable */
   oldPrice?: number | null;
   /** @nullable */
+  purchasePrice?: number | null;
+  /** @nullable */
   sku?: string | null;
   /** @nullable */
   barcode?: string | null;
@@ -40,6 +42,8 @@ export interface AdminProduct {
   /** @nullable */
   publisherId?: number | null;
   /** @nullable */
+  categoryId?: number | null;
+  /** @nullable */
   educationType?: string | null;
   /** @nullable */
   bookType?: string | null;
@@ -47,11 +51,25 @@ export interface AdminProduct {
   edition?: string | null;
   /** @nullable */
   schoolYear?: string | null;
+  /** @nullable */
+  author?: string | null;
   isBestSeller?: boolean;
   isFeatured?: boolean;
   isNew?: boolean;
   isRevision?: boolean;
   isBundle?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingStartAt?: Date | null;
+  /** @nullable */
+  freeShippingEndAt?: Date | null;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
   sortOrder?: number;
   /** @nullable */
   internalNotes?: string | null;

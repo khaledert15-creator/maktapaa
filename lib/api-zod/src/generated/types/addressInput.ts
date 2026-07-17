@@ -11,5 +11,12 @@ export interface AddressInput {
   city: string;
   detailedAddress: string;
   landmark?: string;
+  primaryPhone?: string;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isDefault?: boolean;
 }

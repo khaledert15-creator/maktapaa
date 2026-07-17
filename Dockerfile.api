@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+FROM node:24-bookworm-slim AS build
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
+RUN corepack enable
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY artifacts/api-server/package.json artifacts/api-server/package.json
+COPY artifacts/maktaba/package.json artifacts/maktaba/package.json
+COPY artifacts/mockup-sandbox/package.json artifacts/mockup-sandbox/package.json
+COPY lib/api-client-react/package.json lib/api-client-react/package.json
+COPY lib/api-spec/package.json lib/api-spec/package.json
+COPY lib/api-zod/package.json lib/api-zod/package.json
+COPY lib/db/package.json lib/db/package.json
+COPY scripts/package.json scripts/package.json
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+COPY . .
+ARG BUILD_VERSION=development
+ENV BUILD_VERSION=$BUILD_VERSION NODE_ENV=production
+RUN pnpm --filter @workspace/maktaba run build && pnpm --filter @workspace/api-server run build
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production PORT=5001 MIGRATIONS_DIR=/app/migrations STOREFRONT_DIST_DIR=/app/storefront
+RUN groupadd --system --gid 10001 maktaba && useradd --system --uid 10001 --gid maktaba --home /app maktaba
+WORKDIR /app
+COPY --from=build --chown=maktaba:maktaba /app/node_modules ./node_modules
+COPY --from=build --chown=maktaba:maktaba /app/artifacts/api-server/node_modules ./artifacts/api-server/node_modules
+COPY --from=build --chown=maktaba:maktaba /app/artifacts/api-server/dist ./artifacts/api-server/dist
+COPY --from=build --chown=maktaba:maktaba /app/artifacts/maktaba/dist/public ./storefront
+COPY --from=build --chown=maktaba:maktaba /app/lib/db/drizzle ./migrations
+USER 10001:10001
+EXPOSE 5001
+HEALTHCHECK --interval=30s --timeout=4s --start-period=20s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:5001/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+CMD ["node", "--enable-source-maps", "./artifacts/api-server/dist/index.mjs"]

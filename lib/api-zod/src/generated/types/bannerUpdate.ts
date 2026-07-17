@@ -5,12 +5,21 @@
  * Maktaba Dot Com - Arabic RTL E-commerce API
  * OpenAPI spec version: 0.1.0
  */
+import type { BannerUpdateTextAlignment } from './bannerUpdateTextAlignment';
 
 export interface BannerUpdate {
   imageUrl?: string;
   titleAr?: string;
   subtitleAr?: string;
+  badgeText?: string;
+  primaryButtonText?: string;
+  primaryButtonUrl?: string;
+  secondaryButtonText?: string;
+  secondaryButtonUrl?: string;
+  textAlignment?: BannerUpdateTextAlignment;
   linkUrl?: string;
   sortOrder?: number;
   isActive?: boolean;
+  startAt?: Date;
+  endAt?: Date;
 }

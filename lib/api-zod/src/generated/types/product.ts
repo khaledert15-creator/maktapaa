@@ -5,6 +5,8 @@
  * Maktaba Dot Com - Arabic RTL E-commerce API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductCustomerNoticeTrigger } from './productCustomerNoticeTrigger';
+import type { ProductCustomerNoticeType } from './productCustomerNoticeType';
 
 export interface Product {
   id: number;
@@ -33,6 +35,10 @@ export interface Product {
   isBestSeller?: boolean;
   isNew?: boolean;
   isFeatured?: boolean;
+  isOffer?: boolean;
+  freeShipping?: boolean;
+  /** @nullable */
+  freeShippingBadgeText?: string | null;
   isRevision?: boolean;
   isBundle?: boolean;
   /** @nullable */
@@ -56,4 +62,28 @@ export interface Product {
   /** @nullable */
   avgRating?: number | null;
   reviewCount?: number;
+  /** @nullable */
+  seoTitle?: string | null;
+  /** @nullable */
+  seoDescription?: string | null;
+  customerNoticeEnabled?: boolean;
+  /** @nullable */
+  customerNoticeTitle?: string | null;
+  /** @nullable */
+  customerNoticeMessage?: string | null;
+  /** @nullable */
+  customerNoticeButtonText?: string | null;
+  /** @nullable */
+  customerNoticeIcon?: string | null;
+  /** @nullable */
+  customerNoticeImageUrl?: string | null;
+  /** @nullable */
+  customerNoticeType?: ProductCustomerNoticeType;
+  /** @nullable */
+  customerNoticeTrigger?: ProductCustomerNoticeTrigger;
+  /** @nullable */
+  customerNoticeStartAt?: Date | null;
+  /** @nullable */
+  customerNoticeEndAt?: Date | null;
+  customerNoticeDismissible?: boolean;
 }

@@ -12,6 +12,13 @@ export interface Customer {
   /** @nullable */
   email?: string | null;
   mobile: string;
+  primaryPhone: string;
+  primaryPhoneHasWhatsApp: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isBlocked?: boolean;
   createdAt: string;
 }

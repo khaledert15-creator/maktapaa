@@ -8,10 +8,19 @@
 
 export interface Address {
   id: number;
+  governorateId?: number;
   governorate: string;
   city: string;
   detailedAddress: string;
   /** @nullable */
   landmark?: string | null;
+  /** @nullable */
+  primaryPhone?: string | null;
+  primaryPhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  alternatePhone?: string | null;
+  alternatePhoneHasWhatsApp?: boolean;
+  /** @nullable */
+  preferredWhatsAppPhone?: string | null;
   isDefault?: boolean;
 }

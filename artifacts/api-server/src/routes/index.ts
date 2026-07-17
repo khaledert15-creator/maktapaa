@@ -12,6 +12,9 @@ import adminOrdersRouter from "./admin/orders";
 import adminCustomersRouter from "./admin/customers";
 import adminCouponsRouter from "./admin/coupons";
 import adminReportsRouter from "./admin/reports";
+import adminShippingRouter from "./admin/shipping";
+import adminManagementRouter from "./admin/management";
+import adminClassificationsRouter from "./admin/classifications";
 
 const router: IRouter = Router();
 
@@ -24,9 +27,12 @@ router.use(cartRouter);
 router.use(ordersRouter);
 router.use(adminDashboardRouter);
 router.use(adminProductsRouter);
+router.use(adminClassificationsRouter);
 router.use(adminOrdersRouter);
 router.use(adminCustomersRouter);
 router.use(adminCouponsRouter);
 router.use(adminReportsRouter);
+router.use(adminShippingRouter);
+router.use(adminManagementRouter);
 
 export default router;

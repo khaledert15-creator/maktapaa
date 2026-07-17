@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -7,33 +7,49 @@ import {
   Users, 
   Tags, 
   Truck, 
-  Settings, 
   LogOut,
   Menu,
   X,
-  FileText
+  FileText,
+  PanelRightClose,
+  PanelRightOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { getGetSiteSettingsQueryKey, useGetSiteSettings } from "@workspace/api-client-react";
 
-export function AdminLayout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
-  const { admin, logoutAdmin } = useAuth();
+export function AdminLayout({ children, requiredPermission }: { children: ReactNode; requiredPermission?: string }) {
+  const [location, setLocation] = useLocation();
+  const { admin, isAdminAuthLoaded, logoutAdmin } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const { data: settings } = useGetSiteSettings({ query: { queryKey: getGetSiteSettingsQueryKey(), staleTime: 60_000 } });
+  const adminLogo = settings?.adminLogoUrl || settings?.mainLogoUrl || settings?.logoUrl;
 
+  useEffect(() => {
+    if (isAdminAuthLoaded && !admin) setLocation('/admin/login');
+  }, [admin, isAdminAuthLoaded, setLocation]);
+
+  if (!isAdminAuthLoaded || !admin) {
+    return <div className="min-h-screen grid place-items-center" dir="rtl">جاري التحقق من صلاحية الدخول...</div>;
+  }
+
+  const can = (permission: string) => admin.role === "owner" || admin.role === "administrator" || admin.permissions?.includes(permission) || (permission === "content.view" && (admin.permissions?.includes("content.manage") || admin.permissions?.includes("branding.manage")));
   const navigation = [
-    { name: "لوحة التحكم", href: "/admin", icon: LayoutDashboard },
-    { name: "المنتجات", href: "/admin/products", icon: Package },
-    { name: "الطلبات", href: "/admin/orders", icon: ShoppingCart },
-    { name: "العملاء", href: "/admin/customers", icon: Users },
-    { name: "المخزون", href: "/admin/inventory", icon: Package },
-    { name: "الكوبونات", href: "/admin/coupons", icon: Tags },
-    { name: "الشحن والمحافظات", href: "/admin/shipping", icon: Truck },
-    { name: "التصنيفات", href: "/admin/classifications", icon: Tags },
-    { name: "إدارة المحتوى", href: "/admin/content", icon: FileText },
-    { name: "التقارير", href: "/admin/reports", icon: FileText },
-    { name: "الموظفين", href: "/admin/employees", icon: Users },
-  ];
+    { name: "لوحة التحكم", href: "/admin", icon: LayoutDashboard, permission: "dashboard.view" },
+    { name: "المنتجات", href: "/admin/products", icon: Package, permission: "products.view" },
+    { name: "الطلبات", href: "/admin/orders", icon: ShoppingCart, permission: "orders.view" },
+    { name: "العملاء", href: "/admin/customers", icon: Users, permission: "customers.view" },
+    { name: "المخزون", href: "/admin/inventory", icon: Package, permission: "inventory.view" },
+    { name: "الكوبونات", href: "/admin/coupons", icon: Tags, permission: "coupons.view" },
+    { name: "الشحن والمحافظات", href: "/admin/shipping", icon: Truck, permission: "shipping.view" },
+    { name: "التصنيفات", href: "/admin/classifications", icon: Tags, permission: "classifications.view" },
+    { name: "إدارة المحتوى", href: "/admin/content", icon: FileText, permission: "content.view" },
+    { name: "التقارير", href: "/admin/reports", icon: FileText, permission: "reports.view" },
+    { name: "الموظفين", href: "/admin/employees", icon: Users, permission: "employees.manage" },
+  ].filter(item => can(item.permission));
+  const homeHref = navigation[0]?.href || "/admin/login";
+  const routeAllowed = !requiredPermission || can(requiredPermission);
 
   return (
     <div className="min-h-screen bg-muted/30 flex">
@@ -47,16 +63,16 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
       {/* Sidebar */}
       <aside 
-        className={`fixed inset-y-0 right-0 z-50 w-64 bg-sidebar border-l border-sidebar-border transform transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0 ${
+        className={`fixed inset-y-0 right-0 z-50 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'} w-64 bg-sidebar border-l border-sidebar-border transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 ${
           isSidebarOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <div className="h-full flex flex-col">
           <div className="h-16 flex items-center justify-between px-6 border-b border-sidebar-border">
-            <Link href="/admin" className="text-xl font-bold text-sidebar-foreground">
-              مكتبة دوت كوم | الإدارة
+            <Link href={homeHref} className="flex min-w-0 items-center text-xl font-bold text-sidebar-foreground overflow-hidden whitespace-nowrap" aria-label="الصفحة الرئيسية للوحة الإدارة">
+              {adminLogo ? <img src={adminLogo} alt={settings?.storeNameAr || "مكتبة دوت كوم"} className={`${isCollapsed ? "h-9 w-9" : "h-10 max-w-44"} object-contain object-right`} /> : isCollapsed ? 'م' : `${settings?.storeNameAr || 'مكتبة دوت كوم'} | الإدارة`}
             </Link>
-            <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsSidebarOpen(false)} aria-label="إغلاق القائمة" title="إغلاق القائمة">
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -76,7 +92,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                   }`}
                 >
                   <item.icon className="h-5 w-5" />
-                  {item.name}
+                  {!isCollapsed && item.name}
                 </Link>
               );
             })}
@@ -87,18 +103,18 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
                 {admin?.name?.charAt(0) || "م"}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className={`flex-1 min-w-0 ${isCollapsed ? 'hidden' : ''}`}>
                 <p className="text-sm font-medium text-sidebar-foreground truncate">{admin?.name}</p>
                 <p className="text-xs text-sidebar-foreground/60 truncate">{admin?.role}</p>
               </div>
             </div>
-            <Button 
+            <Button
               variant="outline" 
               className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={logoutAdmin}
             >
               <LogOut className="h-4 w-4 ml-2" />
-              تسجيل الخروج
+              {!isCollapsed && 'تسجيل الخروج'}
             </Button>
           </div>
         </div>
@@ -107,8 +123,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-background border-b flex items-center px-4 lg:px-8 shrink-0">
-          <Button variant="ghost" size="icon" className="lg:hidden ml-4" onClick={() => setIsSidebarOpen(true)}>
+          <Button variant="ghost" size="icon" className="lg:hidden ml-4" onClick={() => setIsSidebarOpen(true)} aria-label="فتح القائمة" title="فتح القائمة">
             <Menu className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="hidden lg:inline-flex" onClick={() => setIsCollapsed(value => !value)} aria-label={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'} title={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'}>
+            {isCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />}
           </Button>
           <div className="flex-1" />
           <Button variant="outline" size="sm" asChild>
@@ -116,7 +135,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </Button>
         </header>
         <div className="flex-1 overflow-auto p-4 lg:p-8">
-          {children}
+          {routeAllowed ? children : (
+            <section className="mx-auto max-w-xl rounded-2xl border bg-card p-8 text-center shadow-sm" dir="rtl">
+              <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-destructive/10 text-2xl" aria-hidden="true">🔒</div>
+              <h1 className="text-2xl font-bold">ليس لديك صلاحية لعرض هذه الصفحة</h1>
+              <p className="mt-2 text-muted-foreground">يمكنك استخدام الأقسام الظاهرة في القائمة فقط. تواصل مع مدير النظام إذا كنت تحتاج صلاحية إضافية.</p>
+              <Button asChild className="mt-6"><Link href={homeHref}>الذهاب إلى قسم مسموح</Link></Button>
+            </section>
+          )}
         </div>
       </main>
     </div>

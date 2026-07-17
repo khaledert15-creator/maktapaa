@@ -1,0 +1,32 @@
+import { useState } from "react";
+import { Link, useLocation, useParams } from "wouter";
+import { AlertTriangle, ArrowRight, BookOpen, MapPin, Package, RefreshCcw, Truck } from "lucide-react";
+import { addToCart, getGetCartQueryKey, getGetMyOrderQueryKey, useGetMyOrder, useRequestOrderCancellation } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { OrderTimeline, orderStatusLabels } from "@/components/storefront/OrderTimeline";
+import { useToast } from "@/hooks/use-toast";
+
+export default function OrderDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const orderId = Number(id);
+  const order = useGetMyOrder(orderId, { query: { queryKey: getGetMyOrderQueryKey(orderId), retry: false } });
+  const [reason, setReason] = useState("");
+  const [sent, setSent] = useState(false);
+  const cancel = useRequestOrderCancellation({ mutation: { onSuccess: () => { setSent(true); toast({ title: "تم إرسال طلب الإلغاء للمراجعة" }); }, onError: () => toast({ title: "تعذر إرسال الطلب", description: "قد يوجد طلب إلغاء قيد المراجعة بالفعل.", variant: "destructive" }) } });
+  if (order.isLoading) return <div className="container mx-auto px-4 py-16 text-center">جاري تحميل الطلب...</div>;
+  if (!order.data) return <div className="container mx-auto px-4 py-24 text-center"><Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/30" /><h1 className="text-2xl font-black">الطلب غير موجود</h1><Button className="mt-6" asChild><Link href="/account">العودة لحسابي</Link></Button></div>;
+  const data = order.data;
+  const canRequestCancellation = ["new", "awaiting_confirmation", "confirmed"].includes(data.status);
+  const reorder = async () => { try { await Promise.all(data.items.map(item => addToCart({ productId: item.productId, quantity: item.quantity }))); await queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() }); setLocation("/cart"); } catch { toast({ title: "بعض المنتجات لم تعد متاحة", variant: "destructive" }); } };
+  return <div className="container mx-auto max-w-5xl px-4 py-9"><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" asChild><Link href="/account" aria-label="العودة إلى الحساب" title="العودة إلى الحساب"><ArrowRight className="h-5 w-5" /></Link></Button><div><h1 className="text-2xl font-black">طلب <span dir="ltr">{data.orderNumber}</span></h1><p className="text-sm text-muted-foreground">{new Date(data.createdAt).toLocaleString("ar-EG")}</p></div></div><span className="rounded-full bg-sky-100 px-4 py-2 text-sm font-black text-sky-700">{orderStatusLabels[data.status] || data.status}</span></div>
+    <div className="grid gap-7 lg:grid-cols-[1fr_340px]"><div className="space-y-6"><Card className="rounded-2xl"><CardHeader><CardTitle>محتويات الطلب</CardTitle></CardHeader><CardContent className="space-y-4">{data.items.map(item => <div key={`${item.productId}-${item.nameAr}`} className="flex items-center gap-4 border-b pb-4 last:border-0 last:pb-0"><div className="h-20 w-14 overflow-hidden rounded-lg bg-muted">{item.coverImage ? <img src={item.coverImage} alt={item.nameAr} className="h-full w-full object-cover" /> : <BookOpen className="h-full w-full p-3 text-muted-foreground/30" />}</div><div className="min-w-0 flex-1"><strong className="line-clamp-2">{item.nameAr}</strong><span className="text-sm text-muted-foreground">الكمية: {item.quantity} × {item.unitPrice} ج.م</span></div><strong>{item.subtotal} ج.م</strong></div>)}</CardContent></Card><Card className="rounded-2xl"><CardHeader><CardTitle>ملخص الحساب والشحن</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><Row label="قيمة المنتجات" value={`${data.subtotal} ج.م`} /><Row label="خصم الكوبون" value={`-${data.couponDiscount || 0} ج.م`} /><Row label="أساس الشحن" value={`${data.shippingBaseCost ?? data.shippingCost} ج.م`} /><Row label="إضافة المدينة / المنطقة" value={`${data.shippingSurcharge || 0} ج.م`} /><Row label="خصم الشحن" value={`-${data.shippingDiscount || 0} ج.م`} />{data.freeShippingReason && <p className="rounded-lg bg-emerald-50 p-2 font-bold text-emerald-700">{data.freeShippingReason}</p>}<Row label="الإجمالي" value={`${data.total} ج.م`} strong /></CardContent></Card>{canRequestCancellation && <Card className="rounded-2xl border-amber-200"><CardHeader><CardTitle className="flex gap-2 text-lg"><AlertTriangle className="h-5 w-5 text-amber-600" /> طلب إلغاء</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm text-muted-foreground">لا يتم إلغاء الطلب مباشرة. أرسل السبب وسيوافق أو يرفض موظف مخوّل.</p>{sent ? <p className="rounded-xl bg-emerald-50 p-4 font-bold text-emerald-700">طلب الإلغاء قيد مراجعة الإدارة.</p> : <><Textarea value={reason} onChange={event => setReason(event.target.value)} placeholder="اكتب سبب الإلغاء (5 أحرف على الأقل)" /><Button variant="outline" className="mt-3 border-amber-300" disabled={reason.trim().length < 5 || cancel.isPending} onClick={() => cancel.mutate({ id: data.id, data: { reason: reason.trim() } })}>إرسال طلب الإلغاء</Button></>}</CardContent></Card>}</div>
+      <aside className="space-y-6"><Card className="rounded-2xl"><CardHeader><CardTitle>مسار الطلب</CardTitle></CardHeader><CardContent><OrderTimeline history={data.statusHistory} /></CardContent></Card><Card className="rounded-2xl"><CardContent className="space-y-4 p-5"><p className="flex gap-3"><MapPin className="h-5 w-5 shrink-0 text-secondary" /><span><strong className="block">عنوان التوصيل</strong>{data.governorate}، {data.city}<br />{data.detailedAddress}</span></p><p className="flex gap-3"><Truck className="h-5 w-5 shrink-0 text-secondary" /><span><strong className="block">الشحن</strong>{data.shippingCost === 0 ? "مجاني" : `${data.shippingCost} ج.م`}</span></p></CardContent></Card><Button className="w-full" variant="secondary" onClick={reorder}><RefreshCcw className="ml-2 h-4 w-4" /> إعادة طلب المنتجات</Button></aside></div>
+  </div>;
+}
+function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) { return <div className={`flex justify-between ${strong ? "border-t pt-3 text-lg font-black" : ""}`}><span>{label}</span><span>{value}</span></div>; }

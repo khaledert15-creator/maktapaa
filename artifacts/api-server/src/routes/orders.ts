@@ -1,8 +1,20 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, couponsTable, customersTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { db, ordersTable, orderItemsTable, orderStatusHistoryTable, cancellationRequestsTable, productsTable, governoratesTable, citiesTable, customersTable, stockMovementsTable, favoritesTable, addressesTable } from "@workspace/db";
+import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
+import { calculateShipping } from "../services/shipping";
+import { enrichProductSummaries } from "../services/catalog";
+import { CouponValidationError, recordCouponUsage, validateCoupon } from "../services/coupons";
+import { parseBody } from "../lib/validation";
+import { egyptianPhoneSchema, optionalEgyptianPhoneSchema, resolvePreferredWhatsAppPhone, z } from "@workspace/api-zod";
+import { rateLimit } from "../lib/rate-limit";
+import { writeAuditLog } from "../services/audit";
 
 const router: IRouter = Router();
+const orderRateLimit = rateLimit({ namespace: "order-create", windowMs: 15 * 60_000, max: 20 });
+const orderCreateSchema = z.object({ customerName: z.string().trim().min(2).max(200), mobile: egyptianPhoneSchema, primaryPhoneHasWhatsApp: z.boolean().default(true), altMobile: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().default(false), preferredWhatsAppPhone: optionalEgyptianPhoneSchema, governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().max(500).nullable().optional(), deliveryNotes: z.string().max(2000).nullable().optional(), orderNotes: z.string().max(2000).nullable().optional(), paymentMethod: z.literal("cash_on_delivery").optional(), couponCode: z.string().trim().max(50).transform(value => value.toUpperCase()).nullable().optional(), checkoutToken: z.string().min(12).max(100).nullable().optional(), cartItems: z.array(z.object({ productId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive().max(99) })).max(100).optional() });
+const cancellationRequestSchema = z.object({ reason: z.string().trim().min(5).max(500) });
+const profileSchema = z.object({ name: z.string().trim().min(2).max(200).optional(), email: z.string().email().max(200).nullable().optional(), mobile: egyptianPhoneSchema.optional(), primaryPhone: egyptianPhoneSchema.optional(), primaryPhoneHasWhatsApp: z.boolean().optional(), alternatePhone: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().optional(), preferredWhatsAppPhone: optionalEgyptianPhoneSchema });
+const addressSchema = z.object({ governorateId: z.coerce.number().int().positive(), city: z.string().trim().min(2).max(200), detailedAddress: z.string().trim().min(5).max(2000), landmark: z.string().trim().max(500).nullable().optional(), primaryPhone: egyptianPhoneSchema.optional(), primaryPhoneHasWhatsApp: z.boolean().optional(), alternatePhone: optionalEgyptianPhoneSchema, alternatePhoneHasWhatsApp: z.boolean().optional(), preferredWhatsAppPhone: optionalEgyptianPhoneSchema, isDefault: z.boolean().optional() });
 
 function generateOrderNumber(): string {
   const date = new Date();
@@ -17,12 +29,18 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
   return {
     id: order.id, orderNumber: order.orderNumber,
     status: order.status, paymentStatus: order.paymentStatus, paymentMethod: order.paymentMethod,
-    customerName: order.customerName, mobile: order.mobile, altMobile: order.altMobile,
+    customerName: order.customerName, mobile: order.mobile, primaryPhone: order.mobile, primaryPhoneHasWhatsApp: order.primaryPhoneHasWhatsApp, altMobile: order.altMobile, alternatePhone: order.altMobile, alternatePhoneHasWhatsApp: order.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: order.preferredWhatsAppPhone,
     governorate: order.governorateName, city: order.city,
     detailedAddress: order.detailedAddress, landmark: order.landmark,
     deliveryNotes: order.deliveryNotes, orderNotes: order.orderNotes,
     subtotal: Number(order.subtotal), discount: Number(order.discount),
     couponDiscount: Number(order.couponDiscount), shippingCost: Number(order.shippingCost),
+    couponCode: order.couponCode,
+    shippingBaseCost: Number(order.shippingBaseCost),
+    shippingSurcharge: Number(order.shippingSurcharge),
+    shippingDiscount: Number(order.shippingDiscount),
+    freeShippingReason: order.freeShippingReason,
+    shippingRuleSnapshot: order.shippingRuleSnapshot,
     total: Number(order.total), estimatedDeliveryDate: order.estimatedDeliveryDate,
     trackingNumber: order.trackingNumber, shippingCompany: order.shippingCompany,
     items: items.map(i => ({
@@ -36,30 +54,49 @@ function mapOrder(order: typeof ordersTable.$inferSelect, items: typeof orderIte
 }
 
 // Create order
-router.post("/orders", async (req, res): Promise<void> => {
+router.post("/orders", orderRateLimit, async (req, res): Promise<void> => {
+  const input = parseBody(orderCreateSchema, req.body, res); if (!input) return;
   const {
     customerName, mobile, altMobile, governorateId, city, detailedAddress,
-    landmark, deliveryNotes, orderNotes, paymentMethod, couponCode, cartItems,
-  } = req.body;
+    landmark, deliveryNotes, orderNotes, couponCode, checkoutToken,
+  } = input;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone: mobile, primaryPhoneHasWhatsApp: input.primaryPhoneHasWhatsApp, alternatePhone: altMobile, alternatePhoneHasWhatsApp: input.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل يجب أن يكون رقمًا صالحًا ومحددًا عليه واتساب" }); return; }
+  const cartItems = input.cartItems ?? req.session.cart?.items;
 
-  if (!customerName || !mobile || !governorateId || !city || !detailedAddress) {
-    res.status(400).json({ error: "البيانات المطلوبة ناقصة" });
-    return;
+  if (checkoutToken) {
+    const [existingOrder] = await db.select().from(ordersTable).where(eq(ordersTable.checkoutToken, checkoutToken));
+    if (existingOrder) {
+      const [items, history] = await Promise.all([
+        db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, existingOrder.id)),
+        db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, existingOrder.id)),
+      ]);
+      res.json(mapOrder(existingOrder, items, history));
+      return;
+    }
   }
 
-  if (!cartItems || cartItems.length === 0) {
+  if (!Array.isArray(cartItems) || cartItems.length === 0) {
     res.status(400).json({ error: "السلة فارغة" });
     return;
   }
 
-  const [gov] = await db.select().from(governoratesTable).where(eq(governoratesTable.id, parseInt(governorateId, 10)));
+  const [gov] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
   if (!gov) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
 
-  // Validate stock and compute totals
+  // Load the complete cart in one query. Stock is checked again atomically in
+  // the transaction below so this read is only used for validation and totals.
   let subtotal = 0;
   const resolvedItems: { product: typeof productsTable.$inferSelect; quantity: number }[] = [];
+  const requestedProductIds = [...new Set(cartItems.map(item => item.productId))];
+  const productRows = await db.select().from(productsTable).where(inArray(productsTable.id, requestedProductIds));
+  const productMap = new Map(productRows.map(product => [product.id, product]));
   for (const ci of cartItems) {
-    const [product] = await db.select().from(productsTable).where(eq(productsTable.id, ci.productId));
+    if (!Number.isInteger(ci.productId) || !Number.isInteger(ci.quantity) || ci.quantity < 1 || ci.quantity > 99) {
+      res.status(400).json({ error: "بيانات كمية المنتج غير صحيحة" });
+      return;
+    }
+    const product = productMap.get(ci.productId);
     if (!product || product.status !== "active") {
       res.status(400).json({ error: `المنتج غير متاح` });
       return;
@@ -72,55 +109,74 @@ router.post("/orders", async (req, res): Promise<void> => {
     resolvedItems.push({ product, quantity: ci.quantity });
   }
 
-  let shippingCost = Number(gov.shippingCost);
-  if (gov.freeShippingThreshold && subtotal >= Number(gov.freeShippingThreshold)) shippingCost = 0;
-
-  let couponDiscount = 0;
-  if (couponCode) {
-    const [coupon] = await db.select().from(couponsTable).where(eq(couponsTable.code, couponCode));
-    if (coupon && coupon.isActive) {
-      if (coupon.type === "percentage") couponDiscount = subtotal * (Number(coupon.value) / 100);
-      else if (coupon.type === "fixed") couponDiscount = Math.min(Number(coupon.value), subtotal);
-      else if (coupon.type === "free_shipping") shippingCost = 0;
-      await db.update(couponsTable).set({ usedCount: sql`${couponsTable.usedCount} + 1` }).where(eq(couponsTable.id, coupon.id));
-    }
-  }
-
-  const total = Math.max(0, subtotal - couponDiscount + shippingCost);
+  const [matchedCity] = await db.select().from(citiesTable).where(and(eq(citiesTable.governorateId, gov.id), eq(citiesTable.nameAr, city), eq(citiesTable.isActive, true)));
   const orderNumber = generateOrderNumber();
 
   
   const customerId = req.session.customerId ? (req.session.customerId as number) : null;
 
-  const [order] = await db.insert(ordersTable).values({
-    orderNumber, customerId, customerName, mobile, altMobile: altMobile || null,
-    governorateId: gov.id, governorateName: gov.nameAr,
-    city, detailedAddress, landmark: landmark || null,
-    deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
-    paymentMethod: paymentMethod || "cash_on_delivery",
-    paymentStatus: paymentMethod === "cash_on_delivery" ? "cash_on_delivery" : "pending",
-    subtotal: String(subtotal), discount: "0", couponDiscount: String(couponDiscount),
-    couponCode: couponCode || null, shippingCost: String(shippingCost),
-    total: String(total), status: "new",
-  }).returning();
+  let order: typeof ordersTable.$inferSelect;
+  try {
+    order = await db.transaction(async (tx) => {
+      const coupon = couponCode ? await validateCoupon(couponCode, { subtotal, customerId, items: resolvedItems.map(({ product, quantity }) => ({ productId: product.id, categoryId: product.categoryId, quantity, unitPrice: Number(product.price) })) }, { executor: tx, lock: true }) : null;
+      const couponDiscount = coupon?.discount ?? 0;
+      const shipping = calculateShipping({
+        products: resolvedItems.map(({ product, quantity }) => ({ price: Number(product.price), quantity, freeShipping: product.freeShipping, freeShippingStartAt: product.freeShippingStartAt, freeShippingEndAt: product.freeShippingEndAt })),
+        subtotal, baseShippingCost: Number(gov.shippingCost), governorateThreshold: gov.freeShippingThreshold ? Number(gov.freeShippingThreshold) : null,
+        cityPriceOverride: matchedCity?.shippingPriceOverride ? Number(matchedCity.shippingPriceOverride) : null,
+        surcharge: matchedCity ? Number(matchedCity.surcharge) : Number(gov.remoteAreaSurcharge), freeShippingCoupon: coupon?.freeShipping ?? false,
+      });
+      const shippingCost = shipping.finalCost;
+      const total = Math.max(0, subtotal - couponDiscount + shippingCost);
+      const [createdOrder] = await tx.insert(ordersTable).values({
+        orderNumber, checkoutToken: checkoutToken || null, customerId, customerName, mobile, primaryPhoneHasWhatsApp: input.primaryPhoneHasWhatsApp, altMobile: altMobile || null, alternatePhoneHasWhatsApp: input.alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
+        governorateId: gov.id, governorateName: gov.nameAr,
+        city, detailedAddress, landmark: landmark || null,
+        deliveryNotes: deliveryNotes || null, orderNotes: orderNotes || null,
+        paymentMethod: "cash_on_delivery", paymentStatus: "cash_on_delivery",
+        subtotal: String(subtotal), discount: "0", couponDiscount: String(couponDiscount),
+        couponCode: couponCode || null, shippingCost: String(shippingCost),
+        shippingBaseCost: String(shipping.baseCost), shippingSurcharge: String(shipping.surcharge),
+        shippingDiscount: String(shipping.discount), freeShippingReason: shipping.freeShippingReason,
+        shippingRuleSnapshot: { rule: shipping.rule, governorateId: gov.id, governorateName: gov.nameAr, city, cityId: matchedCity?.id ?? null, baseCost: shipping.baseCost, surcharge: shipping.surcharge, discount: shipping.discount, finalCost: shipping.finalCost, minDeliveryDays: matchedCity?.minDeliveryDays ?? gov.minDeliveryDays, maxDeliveryDays: matchedCity?.maxDeliveryDays ?? gov.maxDeliveryDays, calculatedAt: new Date().toISOString() },
+        total: String(total), status: "new",
+      }).returning();
 
-  // Insert order items and update stock
-  for (const { product, quantity } of resolvedItems) {
-    await db.insert(orderItemsTable).values({
-      orderId: order.id, productId: product.id, nameAr: product.nameAr,
-      coverImage: product.coverImage, quantity, unitPrice: String(product.price),
-      discount: "0", subtotal: String(Number(product.price) * quantity),
+      for (const { product, quantity } of resolvedItems) {
+        const [updatedStock] = await tx.update(productsTable).set({
+          stockQuantity: sql`${productsTable.stockQuantity} - ${quantity}`,
+          salesCount: sql`${productsTable.salesCount} + ${quantity}`,
+        }).where(and(eq(productsTable.id, product.id), gte(productsTable.stockQuantity, quantity))).returning({ stockQuantity: productsTable.stockQuantity });
+        if (!updatedStock) throw new Error(`OUT_OF_STOCK:${product.nameAr}`);
+        await tx.insert(orderItemsTable).values({
+          orderId: createdOrder.id, productId: product.id, nameAr: product.nameAr,
+          coverImage: product.coverImage, quantity, unitPrice: product.price,
+          discount: "0", subtotal: String(Number(product.price) * quantity),
+        });
+        await tx.insert(stockMovementsTable).values({
+          productId: product.id, movementType: "sale",
+          quantityBefore: updatedStock.stockQuantity + quantity,
+          quantityAfter: updatedStock.stockQuantity, quantityChanged: -quantity,
+          reason: `حجز للطلب ${createdOrder.orderNumber}`, orderId: createdOrder.id,
+        });
+      }
+      await tx.insert(orderStatusHistoryTable).values({ orderId: createdOrder.id, status: "new", notes: "تم إنشاء الطلب" });
+      if (coupon) await recordCouponUsage(tx, coupon, createdOrder.id, customerId);
+      return createdOrder;
     });
-    await db.update(productsTable).set({
-      stockQuantity: product.stockQuantity - quantity,
-      salesCount: sql`${productsTable.salesCount} + ${quantity}`,
-    }).where(eq(productsTable.id, product.id));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("OUT_OF_STOCK:")) {
+      res.status(409).json({ error: `الكمية المطلوبة لم تعد متاحة للمنتج: ${error.message.slice(13)}` });
+      return;
+    }
+    if (error instanceof CouponValidationError) { res.status(400).json({ error: error.message, code: error.code }); return; }
+    throw error;
   }
 
-  await db.insert(orderStatusHistoryTable).values({ orderId: order.id, status: "new", notes: "تم إنشاء الطلب" });
-
-  // Clear cart
+  // Clear cart only after the transaction completed successfully and keep the
+  // confirmation reference in the signed session for guest checkout.
   delete (req.session).cart;
+  req.session.lastOrderNumber = order.orderNumber;
 
   const [items, history] = await Promise.all([
     db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id)),
@@ -130,13 +186,33 @@ router.post("/orders", async (req, res): Promise<void> => {
   res.status(201).json(mapOrder(order, items, history));
 });
 
+// Guest customers can only reopen the order just created in the same signed
+// session. Signed-in customers can reopen any of their own orders.
+router.get("/orders/confirmation/:orderNumber", async (req, res): Promise<void> => {
+  const orderNumber = Array.isArray(req.params.orderNumber) ? req.params.orderNumber[0] : req.params.orderNumber;
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.orderNumber, orderNumber));
+  const ownsOrder = order && req.session.customerId && order.customerId === req.session.customerId;
+  const isRecentGuestOrder = order && req.session.lastOrderNumber === order.orderNumber;
+  if (!order || (!ownsOrder && !isRecentGuestOrder)) {
+    res.status(404).json({ error: "الطلب غير موجود" });
+    return;
+  }
+  const [items, history] = await Promise.all([
+    db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id)),
+    db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, order.id)).orderBy(desc(orderStatusHistoryTable.createdAt)),
+  ]);
+  res.json(mapOrder(order, items, history));
+});
+
 // Track order by number + mobile
 router.get("/orders/track", async (req, res): Promise<void> => {
   const { orderNumber, mobile } = req.query as { orderNumber: string; mobile: string };
   if (!orderNumber || !mobile) { res.status(400).json({ error: "رقم الطلب والهاتف مطلوبان" }); return; }
 
+  const normalizedMobile = egyptianPhoneSchema.safeParse(mobile);
+  if (!normalizedMobile.success) { res.status(400).json({ error: "رقم الهاتف غير صحيح" }); return; }
   const [order] = await db.select().from(ordersTable)
-    .where(and(eq(ordersTable.orderNumber, orderNumber), eq(ordersTable.mobile, mobile)));
+    .where(and(eq(ordersTable.orderNumber, orderNumber), eq(ordersTable.mobile, normalizedMobile.data)));
 
   if (!order) { res.status(404).json({ error: "الطلب غير موجود" }); return; }
 
@@ -173,13 +249,16 @@ router.get("/orders/my", async (req, res): Promise<void> => {
       .where(eq(ordersTable.customerId, req.session.customerId as number)),
   ]);
 
-  const orderData = await Promise.all(orders.map(async (o) => {
-    const [items, history] = await Promise.all([
-      db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, o.id)),
-      db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, o.id)).orderBy(desc(orderStatusHistoryTable.createdAt)),
-    ]);
-    return mapOrder(o, items, history);
-  }));
+  const orderIds = orders.map(order => order.id);
+  const [allItems, allHistory] = orderIds.length ? await Promise.all([
+    db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds)),
+    db.select().from(orderStatusHistoryTable).where(inArray(orderStatusHistoryTable.orderId, orderIds)).orderBy(desc(orderStatusHistoryTable.createdAt)),
+  ]) : [[], []];
+  const orderData = orders.map(order => mapOrder(
+    order,
+    allItems.filter(item => item.orderId === order.id),
+    allHistory.filter(history => history.orderId === order.id),
+  ));
 
   res.json({ items: orderData, total: count, page: pageNum, limit: limitNum });
 });
@@ -212,9 +291,8 @@ router.post("/orders/:id/cancel-request", async (req, res): Promise<void> => {
 
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
-  const { reason } = req.body;
-
-  if (!reason) { res.status(400).json({ error: "سبب الإلغاء مطلوب" }); return; }
+  const input = parseBody(cancellationRequestSchema, req.body, res); if (!input) return;
+  const { reason } = input;
 
   const [order] = await db.select().from(ordersTable)
     .where(and(eq(ordersTable.id, id), eq(ordersTable.customerId, req.session.customerId as number)));
@@ -226,9 +304,25 @@ router.post("/orders/:id/cancel-request", async (req, res): Promise<void> => {
     return;
   }
 
-  const [cr] = await db.insert(cancellationRequestsTable).values({
-    orderId: id, customerId: req.session.customerId as number, reason, status: "pending",
-  }).returning();
+  const [existingRequest] = await db.select().from(cancellationRequestsTable)
+    .where(and(
+      eq(cancellationRequestsTable.orderId, id),
+      eq(cancellationRequestsTable.status, "pending"),
+    ));
+  if (existingRequest) {
+    res.status(409).json({ error: "يوجد طلب إلغاء قيد المراجعة بالفعل" });
+    return;
+  }
+
+  let cr: typeof cancellationRequestsTable.$inferSelect;
+  try {
+    [cr] = await db.insert(cancellationRequestsTable).values({
+      orderId: id, customerId: req.session.customerId as number, reason, status: "pending",
+    }).returning();
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") { res.status(409).json({ error: "يوجد طلب إلغاء قيد المراجعة بالفعل" }); return; }
+    throw error;
+  }
 
   res.status(201).json({ id: cr.id, orderId: cr.orderId, reason: cr.reason, status: cr.status, createdAt: cr.createdAt });
 });
@@ -238,41 +332,169 @@ router.patch("/customers/me/profile", async (req, res): Promise<void> => {
   
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
-  const { name, email, mobile } = req.body;
+  const input = parseBody(profileSchema, req.body, res); if (!input) return;
+  const [existingCustomer] = await db.select().from(customersTable).where(eq(customersTable.id, req.session.customerId as number));
+  if (!existingCustomer) { res.status(404).json({ error: "الحساب غير موجود" }); return; }
+  if (input.mobile && input.primaryPhone && input.mobile !== input.primaryPhone) { res.status(400).json({ error: "رقم الهاتف الأساسي غير متطابق" }); return; }
+  const primaryPhone = input.primaryPhone ?? input.mobile ?? existingCustomer.primaryPhone;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? existingCustomer.primaryPhoneHasWhatsApp;
+  const alternatePhone = input.alternatePhone === undefined ? existingCustomer.alternatePhone : input.alternatePhone;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? existingCustomer.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? existingCustomer.preferredWhatsAppPhone : input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
   const [customer] = await db.update(customersTable)
-    .set({ ...(name && { name }), ...(email && { email }), ...(mobile && { mobile }) })
+    .set({ ...(input.name && { name: input.name }), ...(input.email !== undefined && { email: input.email?.toLowerCase() || null }), primaryPhone, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone })
     .where(eq(customersTable.id, req.session.customerId as number))
     .returning();
 
-  res.json({ id: customer.id, name: customer.name, email: customer.email, mobile: customer.mobile, isBlocked: customer.isBlocked, createdAt: customer.createdAt });
+  await writeAuditLog(req, { action: "customer.phone_preferences_update", entityType: "customer", entityId: customer.id, description: "تعديل أرقام الهاتف وتفضيل واتساب من حساب العميل", beforeData: { primaryPhone: existingCustomer.primaryPhone, primaryPhoneHasWhatsApp: existingCustomer.primaryPhoneHasWhatsApp, alternatePhone: existingCustomer.alternatePhone, alternatePhoneHasWhatsApp: existingCustomer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: existingCustomer.preferredWhatsAppPhone }, afterData: { primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone } });
+
+  res.json({ id: customer.id, name: customer.name, email: customer.email, mobile: customer.primaryPhone, primaryPhone: customer.primaryPhone, primaryPhoneHasWhatsApp: customer.primaryPhoneHasWhatsApp, alternatePhone: customer.alternatePhone, alternatePhoneHasWhatsApp: customer.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: customer.preferredWhatsAppPhone, isBlocked: customer.isBlocked, createdAt: customer.createdAt });
 });
 
 // Favorites
 router.get("/customers/me/favorites", async (req, res): Promise<void> => {
-  
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  res.json([]);
+  const rows = await db.select({ product: productsTable })
+    .from(favoritesTable)
+    .innerJoin(productsTable, eq(favoritesTable.productId, productsTable.id))
+    .where(and(eq(favoritesTable.customerId, req.session.customerId), eq(productsTable.status, "active")))
+    .orderBy(desc(favoritesTable.createdAt));
+  res.json(await enrichProductSummaries(rows.map(row => row.product)));
 });
 
 router.post("/customers/me/favorites/:productId", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId;
+  const productId = Number(raw);
+  const [product] = await db.select({ id: productsTable.id }).from(productsTable)
+    .where(and(eq(productsTable.id, productId), eq(productsTable.status, "active")));
+  if (!product) { res.status(404).json({ error: "المنتج غير موجود" }); return; }
+  await db.insert(favoritesTable).values({ customerId: req.session.customerId, productId }).onConflictDoNothing();
   res.sendStatus(204);
 });
 
 router.delete("/customers/me/favorites/:productId", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.productId) ? req.params.productId[0] : req.params.productId;
+  await db.delete(favoritesTable).where(and(
+    eq(favoritesTable.customerId, req.session.customerId),
+    eq(favoritesTable.productId, Number(raw)),
+  ));
   res.sendStatus(204);
 });
 
 // Addresses
 router.get("/customers/me/addresses", async (req, res): Promise<void> => {
-  
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  res.json([]);
+  const rows = await db.select().from(addressesTable)
+    .where(eq(addressesTable.customerId, req.session.customerId))
+    .orderBy(desc(addressesTable.isDefault), desc(addressesTable.createdAt));
+  res.json(rows.map(address => ({
+    id: address.id,
+    governorateId: address.governorateId,
+    governorate: address.governorateName,
+    city: address.city,
+    detailedAddress: address.detailedAddress,
+    landmark: address.landmark,
+    primaryPhone: address.primaryPhone,
+    primaryPhoneHasWhatsApp: address.primaryPhoneHasWhatsApp,
+    alternatePhone: address.alternatePhone,
+    alternatePhoneHasWhatsApp: address.alternatePhoneHasWhatsApp,
+    preferredWhatsAppPhone: address.preferredWhatsAppPhone,
+    isDefault: address.isDefault,
+  })));
 });
 
 router.post("/customers/me/addresses", async (req, res): Promise<void> => {
-  
   if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
-  res.status(201).json({ id: 1, governorate: "", city: req.body.city, detailedAddress: req.body.detailedAddress, landmark: null, isDefault: false });
+  const input = parseBody(addressSchema, req.body, res); if (!input) return;
+  const { governorateId, city, detailedAddress, landmark, isDefault } = input;
+  const [governorate] = await db.select().from(governoratesTable)
+    .where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
+  if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
+
+  const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, req.session.customerId));
+  if (!customer) { res.status(404).json({ error: "الحساب غير موجود" }); return; }
+  const primaryPhone = input.primaryPhone ?? customer.primaryPhone;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? customer.primaryPhoneHasWhatsApp;
+  const alternatePhone = input.alternatePhone === undefined ? customer.alternatePhone : input.alternatePhone;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? customer.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? customer.preferredWhatsAppPhone : input.preferredWhatsAppPhone });
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
+  const created = await db.transaction(async tx => {
+    const [firstAddress] = await tx.select({ id: addressesTable.id }).from(addressesTable)
+      .where(eq(addressesTable.customerId, req.session.customerId!)).limit(1);
+    const makeDefault = Boolean(isDefault) || !firstAddress;
+    if (makeDefault) {
+      await tx.update(addressesTable).set({ isDefault: false })
+        .where(eq(addressesTable.customerId, req.session.customerId!));
+    }
+    const [address] = await tx.insert(addressesTable).values({
+      customerId: req.session.customerId!,
+      governorateId,
+      governorateName: governorate.nameAr,
+      city: city.trim(),
+      detailedAddress: detailedAddress.trim(),
+      landmark: landmark?.trim() || null,
+      primaryPhone, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
+      isDefault: makeDefault,
+    }).returning();
+    return address;
+  });
+  await writeAuditLog(req, { action: "customer.address_phone_create", entityType: "customer_address", entityId: created.id, description: "إضافة عنوان وأرقام استلام للعميل", afterData: { customerId: created.customerId, primaryPhone: created.primaryPhone, primaryPhoneHasWhatsApp: created.primaryPhoneHasWhatsApp, alternatePhone: created.alternatePhone, alternatePhoneHasWhatsApp: created.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: created.preferredWhatsAppPhone } });
+  res.status(201).json({ id: created.id, governorateId: created.governorateId, governorate: created.governorateName, city: created.city, detailedAddress: created.detailedAddress, landmark: created.landmark, primaryPhone: created.primaryPhone, primaryPhoneHasWhatsApp: created.primaryPhoneHasWhatsApp, alternatePhone: created.alternatePhone, alternatePhoneHasWhatsApp: created.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: created.preferredWhatsAppPhone, isDefault: created.isDefault });
+});
+
+router.patch("/customers/me/addresses/:id", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(raw);
+  const [existing] = await db.select().from(addressesTable).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId)));
+  if (!existing) { res.status(404).json({ error: "العنوان غير موجود" }); return; }
+
+  const input = parseBody(addressSchema.partial(), req.body, res); if (!input) return;
+  const governorateId = input.governorateId ?? existing.governorateId;
+  const [governorate] = await db.select().from(governoratesTable).where(and(eq(governoratesTable.id, governorateId), eq(governoratesTable.isActive, true)));
+  if (!governorate) { res.status(400).json({ error: "المحافظة غير صحيحة" }); return; }
+  const primaryPhone = input.primaryPhone ?? existing.primaryPhone;
+  const primaryPhoneHasWhatsApp = input.primaryPhoneHasWhatsApp ?? existing.primaryPhoneHasWhatsApp;
+  const alternatePhone = input.alternatePhone === undefined ? existing.alternatePhone : input.alternatePhone;
+  const alternatePhoneHasWhatsApp = input.alternatePhoneHasWhatsApp ?? existing.alternatePhoneHasWhatsApp;
+  const preferredWhatsAppPhone = primaryPhone ? resolvePreferredWhatsAppPhone({ primaryPhone, primaryPhoneHasWhatsApp, alternatePhone, alternatePhoneHasWhatsApp, preferredWhatsAppPhone: input.preferredWhatsAppPhone === undefined ? existing.preferredWhatsAppPhone : input.preferredWhatsAppPhone }) : null;
+  if (input.preferredWhatsAppPhone && !preferredWhatsAppPhone) { res.status(400).json({ error: "رقم واتساب المفضل غير صالح" }); return; }
+  const updated = await db.transaction(async tx => {
+    if (input.isDefault) {
+      await tx.update(addressesTable).set({ isDefault: false }).where(eq(addressesTable.customerId, req.session.customerId!));
+    }
+    const [address] = await tx.update(addressesTable).set({
+      governorateId,
+      governorateName: governorate.nameAr,
+      city: input.city || existing.city,
+      detailedAddress: input.detailedAddress || existing.detailedAddress,
+      landmark: input.landmark === undefined ? existing.landmark : input.landmark || null,
+      primaryPhone, primaryPhoneHasWhatsApp, alternatePhone: alternatePhone || null, alternatePhoneHasWhatsApp, preferredWhatsAppPhone,
+      isDefault: input.isDefault === undefined ? existing.isDefault : input.isDefault,
+    }).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId!))).returning();
+    return address;
+  });
+  await writeAuditLog(req, { action: "customer.address_phone_update", entityType: "customer_address", entityId: updated.id, description: "تعديل عنوان وأرقام استلام للعميل", beforeData: { primaryPhone: existing.primaryPhone, primaryPhoneHasWhatsApp: existing.primaryPhoneHasWhatsApp, alternatePhone: existing.alternatePhone, alternatePhoneHasWhatsApp: existing.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: existing.preferredWhatsAppPhone }, afterData: { primaryPhone: updated.primaryPhone, primaryPhoneHasWhatsApp: updated.primaryPhoneHasWhatsApp, alternatePhone: updated.alternatePhone, alternatePhoneHasWhatsApp: updated.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: updated.preferredWhatsAppPhone } });
+  res.json({ id: updated.id, governorateId: updated.governorateId, governorate: updated.governorateName, city: updated.city, detailedAddress: updated.detailedAddress, landmark: updated.landmark, primaryPhone: updated.primaryPhone, primaryPhoneHasWhatsApp: updated.primaryPhoneHasWhatsApp, alternatePhone: updated.alternatePhone, alternatePhoneHasWhatsApp: updated.alternatePhoneHasWhatsApp, preferredWhatsAppPhone: updated.preferredWhatsAppPhone, isDefault: updated.isDefault });
+});
+
+router.delete("/customers/me/addresses/:id", async (req, res): Promise<void> => {
+  if (!req.session.customerId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(raw);
+  await db.transaction(async tx => {
+    const [removed] = await tx.delete(addressesTable).where(and(eq(addressesTable.id, id), eq(addressesTable.customerId, req.session.customerId!))).returning();
+    if (removed?.isDefault) {
+      const [next] = await tx.select({ id: addressesTable.id }).from(addressesTable)
+        .where(eq(addressesTable.customerId, req.session.customerId!)).orderBy(desc(addressesTable.createdAt)).limit(1);
+      if (next) await tx.update(addressesTable).set({ isDefault: true }).where(eq(addressesTable.id, next.id));
+    }
+  });
+  res.sendStatus(204);
 });
 
 export default router;

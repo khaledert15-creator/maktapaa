@@ -1,13 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, productsTable } from "@workspace/db";
 import { gte, lte, and, eq, sql } from "drizzle-orm";
-import { requireAdminAuth } from "../../lib/auth";
+import { requireAdminAuth, requireAdminPermission } from "../../lib/auth";
 
 const router: IRouter = Router();
 router.use(requireAdminAuth);
 
-router.get("/admin/reports/sales", async (req, res): Promise<void> => {
-  const { dateFrom, dateTo, groupBy = "day" } = req.query as Record<string, string>;
+router.get("/admin/reports/sales", requireAdminPermission("reports.view"), async (req, res): Promise<void> => {
+  const { dateFrom, dateTo } = req.query as Record<string, string>;
   if (!dateFrom || !dateTo) { res.status(400).json({ error: "dateFrom and dateTo required" }); return; }
 
   const from = new Date(dateFrom);
@@ -37,7 +37,7 @@ router.get("/admin/reports/sales", async (req, res): Promise<void> => {
   });
 });
 
-router.get("/admin/reports/inventory", async (_req, res): Promise<void> => {
+router.get("/admin/reports/inventory", requireAdminPermission("reports.view"), async (_req, res): Promise<void> => {
   const [{ totalProducts }] = await db.select({ totalProducts: sql<number>`count(*)::int` }).from(productsTable).where(eq(productsTable.status, "active"));
   const [{ inStockCount }] = await db.select({ inStockCount: sql<number>`count(*)::int` }).from(productsTable).where(and(eq(productsTable.status, "active"), sql`${productsTable.stockQuantity} > ${productsTable.minStockLevel}` as ReturnType<typeof eq>));
   const [{ lowStockCount }] = await db.select({ lowStockCount: sql<number>`count(*)::int` }).from(productsTable).where(and(eq(productsTable.status, "active"), sql`${productsTable.stockQuantity} > 0 AND ${productsTable.stockQuantity} <= ${productsTable.minStockLevel}` as ReturnType<typeof eq>));

@@ -1,5 +1,3 @@
-'use client';
-
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { Button } from '@/components/ui/button';
@@ -273,7 +271,7 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">فتح أو إغلاق القائمة الجانبية</span>
     </Button>
   );
 }

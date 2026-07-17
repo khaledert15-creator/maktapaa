@@ -1,23 +1,9 @@
-import { Card, CardContent } from '@/components/ui/card';
-import { AlertCircle } from 'lucide-react';
+import { Link } from "wouter";
+import { CircleHelp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Seo } from "@/components/storefront/Seo";
 
 export default function NotFound() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">
-              404 Page Not Found
-            </h1>
-          </div>
-
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-12"><Seo title="الصفحة غير موجودة | مكتبة دوت كوم" description="تعذر العثور على الصفحة المطلوبة" /><Card className="w-full max-w-lg"><CardContent className="space-y-5 p-10 text-center"><CircleHelp className="mx-auto h-16 w-16 text-secondary" /><h1 className="text-3xl font-black">الصفحة غير موجودة</h1><p className="text-muted-foreground">قد يكون الرابط قد تغير أو تمت إزالة الصفحة.</p><div className="flex justify-center gap-3"><Button asChild><Link href="/">العودة للرئيسية</Link></Button><Button asChild variant="outline"><Link href="/catalog">تصفح الكتب</Link></Button></div></CardContent></Card></div>;
 }

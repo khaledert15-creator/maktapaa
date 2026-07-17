@@ -1,0 +1,1 @@
+ALTER TABLE "help_links" ADD COLUMN "text_en" text;
